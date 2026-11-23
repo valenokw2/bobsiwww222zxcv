@@ -5,7 +5,6 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
     <ProjectGuid>{8AC4CB70-4D8A-4E24-81AE-7B9E4DD78B6A}</ProjectGuid>
-    <OutputType>AppContainerExe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>PixelOverlay</RootNamespace>
     <AssemblyName>PixelOverlay</AssemblyName>
@@ -29,7 +28,7 @@
     <Optimize>true</Optimize><DebugType>pdbonly</DebugType><PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="App.xaml.cs" /><Compile Include="Models\*.cs" /><Compile Include="Services\*.cs" /><Compile Include="Views\*.xaml.cs" /><Compile Include="Properties\*.cs" />
+    <Compile Include="App.xaml.cs" /><Compile Include="Models\*.cs" /><Compile Include="Services\*.cs" /><Compile Include="Diagnostics\*.cs" /><Compile Include="Views\*.xaml.cs" /><Compile Include="Properties\*.cs" />
     <ApplicationDefinition Include="App.xaml" /><Page Include="Views\*.xaml" />
     <AppxManifest Include="Package.appxmanifest" />
     <Content Include="Assets\**\*" /><Content Include="PixelOverlay\**\*" />
