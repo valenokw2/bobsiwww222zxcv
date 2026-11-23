@@ -118,7 +118,7 @@ namespace PixelOverlay
             try
             {
                 await WidgetDiagnostics.LogAsync("Application suspending.");
-                await SettingsStore.Current.SaveAsync();
+                await SettingsStore.Current.FlushAsync();
             }
             catch (Exception ex) { await WidgetDiagnostics.LogAsync("Exception while suspending.", ex); }
             finally { deferral.Complete(); }
