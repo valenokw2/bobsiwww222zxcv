@@ -57,7 +57,8 @@ namespace PixelOverlay.Views
             // RequestedOpacity belongs to the Game Bar surface and only affects this image-only widget.
             OverlaySurface.Opacity = _widget == null ? 1 : _widget.RequestedOpacity / 100d;
             var item = _images.Selected();
-            if (item == null) { OverlayImage.Source = null; _gif?.Stop(); _loadedId = null; return; }
+            if (item == null) { OverlayImage.Source = null; _gif?.Stop(); _loadedId = null; Hint.Visibility = Visibility.Visible; return; }
+            Hint.Visibility = Visibility.Collapsed;
             if (_loadedId == item.Id)
             {
                 if (item.IsGif) _gif?.UpdateSchedule();
