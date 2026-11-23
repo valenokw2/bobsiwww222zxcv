@@ -163,7 +163,7 @@ namespace PixelOverlay.Services
                     int destinationIndex = (destinationY * _width + destinationX) * 4;
                     if (alpha == 255)
                     {
-                        Buffer.BlockCopy(source, sourceIndex, _canvas, destinationIndex, 4);
+                        System.Buffer.BlockCopy(source, sourceIndex, _canvas, destinationIndex, 4);
                         continue;
                     }
                     int inverse = 255 - alpha;
