@@ -49,7 +49,7 @@ namespace PixelOverlay
         private async void OnSuspending(object sender, SuspendingEventArgs e)
         {
             var deferral = e.SuspendingOperation.GetDeferral();
-            try { await SettingsStore.Current.SaveAsync(); } finally { deferral.Complete(); }
+            try { await SettingsStore.Current.FlushAsync(); } finally { deferral.Complete(); }
         }
         private static void OnNavigationFailed(object sender, NavigationFailedEventArgs e) => throw new Exception("Failed to load " + e.SourcePageType.FullName);
     }
