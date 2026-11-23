@@ -44,3 +44,8 @@ Do not send signing certificates, passwords, or unrelated personal files.
 The manifest registers two Game Bar extensions: `PixelOverlay` (Standard) and `PixelOverlaySettings` (Settings). Activation is routed in `App.OnActivated`. The most useful first evidence is whether the app receives `ms-gamebarwidget` activation, which extension ID is supplied, and whether the frame navigates to `OverlayPage`.
 
 The logger records activation, navigation, page load/unload, widget state events, image selection/loading, and exceptions. It is intentionally fail-safe and writes to LocalState.
+
+
+## Build status
+
+The diagnostics branch is built by `.github/workflows/uwp-diagnostics-build.yml`. Do not distribute a package until the workflow completes successfully.
