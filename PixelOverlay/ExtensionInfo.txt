@@ -1,0 +1,1 @@
+This public folder is deliberately packaged for the two Xbox Game Bar app extensions declared in Package.appxmanifest.
