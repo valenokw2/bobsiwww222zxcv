@@ -17,4 +17,4 @@ function New-Logo([string]$Name, [int]$Width, [int]$Height = $Width) {
   $g.DrawEllipse($pen, $x-$r, $y-$r, $r*2, $r*2); $g.DrawLine($pen, $x-$r*1.4, $y, $x+$r*1.4, $y); $g.DrawLine($pen, $x, $y-$r*1.4, $x, $y+$r*1.4)
   $bitmap.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $pen.Dispose(); $g.Dispose(); $bitmap.Dispose()
 }
-New-Logo 'StoreLogo.png' 50; New-Logo 'Square44x44Logo.png' 44; New-Logo 'Square150x150Logo.png' 150; New-Logo 'Wide310x150Logo.png' 310 150; New-Logo 'SplashScreen.png' 620
+New-Logo 'StoreLogo.png' 50; New-Logo 'Square44x44Logo.png' 44; New-Logo 'Square150x150Logo.png' 150; New-Logo 'Wide310x150Logo.png' 310 150; New-Logo 'SplashScreen.png' 620 300
