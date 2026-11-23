@@ -1,0 +1,41 @@
+
+name: PixelOverlay Windows Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build PixelOverlay
+        shell: pwsh
+        run: |
+          msbuild .\PixelOverlay.sln `
+            /restore `
+            /m `
+            /p:Configuration=Release `
+            /p:Platform=x64
+
+      - name: Upload build files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixelOverlay-Windows
+          path: |
+            **/bin/**/Release/**/*.exe
+            **/bin/**/Release/**/*.msix
+            **/bin/**/Release/**/*.msixbundle
+          if-no-files-found: warn
