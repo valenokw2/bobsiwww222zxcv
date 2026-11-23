@@ -129,7 +129,7 @@ namespace PixelOverlay.Services
         private void ApplyPreviousDisposal()
         {
             if (_previousDisposal == 2) Clear(_previousLeft, _previousTop, _previousWidth, _previousHeight);
-            else if (_previousDisposal == 3 && _snapshot != null) Buffer.BlockCopy(_snapshot, 0, _canvas, 0, _canvas.Length);
+            else if (_previousDisposal == 3 && _snapshot != null) System.Buffer.BlockCopy(_snapshot, 0, _canvas, 0, _canvas.Length);
         }
 
         private void Clear(int left, int top, int width, int height)
@@ -175,7 +175,7 @@ namespace PixelOverlay.Services
             }
         }
 
-        private static async Task<int> TryReadAsync(BitmapProperties properties, string key)
+        private static async Task<int> TryReadAsync(BitmapPropertiesView properties, string key)
         {
             try
             {
