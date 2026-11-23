@@ -1,0 +1,44 @@
+name: PixelOverlay UWP Diagnostics Build
+
+on:
+  push:
+    branches:
+      - debug/uwp-gamebar-diagnostics
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout diagnostics branch
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build UWP x64 and capture binary log
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          msbuild .\PixelOverlay.sln /restore /m /p:Configuration=Release /p:Platform=x64 /bl:artifacts\PixelOverlay.binlog 2>&1 |
+            Tee-Object -FilePath artifacts\msbuild.log
+          if ($LASTEXITCODE -ne 0) {
+            throw "UWP build failed with exit code $LASTEXITCODE. See artifacts/msbuild.log."
+          }
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixelOverlay-UWP-Build-Diagnostics
+          path: |
+            artifacts/**
+            **/bin/x64/Release/**
+          if-no-files-found: warn
+          retention-days: 14
