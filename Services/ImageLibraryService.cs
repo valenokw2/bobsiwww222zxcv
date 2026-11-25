@@ -103,7 +103,7 @@ namespace PixelOverlay.Services
                 if (sourcePixels > MaxDecodedPixels)
                     scale = Math.Min(scale, Math.Sqrt(MaxDecodedPixels / sourcePixels));
 
-                var bitmap = new BitmapImage();
+                var bitmap = new BitmapImage { AutoPlay = false };
                 if (sourceWidth >= sourceHeight)
                     bitmap.DecodePixelWidth = (int)Math.Max(1d, Math.Floor(sourceWidth * scale));
                 else
