@@ -70,12 +70,16 @@ namespace PixelOverlay.Services
 
         private async Task SaveAfterDelayAsync(CancellationToken token, CoreDispatcher dispatcher)
         {
-            try { await Task.Delay(120, token); }
-            catch (TaskCanceledException) { return; }
-            if (dispatcher != null && !dispatcher.HasThreadAccess)
-                await dispatcher.RunAsync(CoreDispatcherPriority.Normal, () => { _ = SaveAsync(); });
-            else
-                await SaveAsync();
+            try
+            {
+                await Task.Delay(120, token);
+                if (dispatcher != null && !dispatcher.HasThreadAccess)
+                    await dispatcher.RunAsync(CoreDispatcherPriority.Normal, () => { _ = SaveAsync(); });
+                else
+                    await SaveAsync();
+            }
+            catch (TaskCanceledException) { }
+            catch (Exception ex) { AppDiagnostics.Log("Debounced settings save", ex); }
         }
 
         private Task SaveAsync()
@@ -125,6 +129,12 @@ namespace PixelOverlay.Services
                 while (_dirty);
                 ApplicationData.Current.SignalDataChanged();
             }
+            catch (Exception ex)
+            {
+                AppDiagnostics.Log("Settings save", ex);
+                // Keep the app usable after a storage failure. A later user change will retry.
+                _dirty = false;
+            }
             finally
             {
                 _saving = false;
@@ -145,7 +155,7 @@ namespace PixelOverlay.Services
                 }
                 await ReloadAsync();
             }
-            catch (Exception) { }
+            catch (Exception ex) { AppDiagnostics.Log("Cross-process settings notification", ex); }
         }
 
         private async Task ReloadAsync()
@@ -162,7 +172,11 @@ namespace PixelOverlay.Services
                     saved = (PersistedSettings)serializer.ReadObject(stream);
             }
             catch (FileNotFoundException) { return; }
-            catch (Exception) { return; }
+            catch (Exception ex)
+            {
+                AppDiagnostics.Log("Settings reload", ex);
+                return;
+            }
 
             _reloading = true;
             try
