@@ -385,6 +385,7 @@ namespace PixelOverlay.Views
             {
                 var dialog = new ContentDialog
                 {
+                    XamlRoot = this.XamlRoot,
                     Title = "Pixel Overlay",
                     Content = message,
                     CloseButtonText = "OK"
