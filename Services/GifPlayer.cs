@@ -15,7 +15,6 @@ namespace PixelOverlay.Services
     // One decoded frame and one composited canvas. Frames are not retained between cycles.
     public sealed class GifPlayer : IDisposable
     {
-        private const long MaxPixels = 16L * 1024L * 1024L;
         private readonly DispatcherTimer _timer = new DispatcherTimer();
         private BitmapDecoder _decoder;
         private IRandomAccessStream _stream;
@@ -53,8 +52,6 @@ namespace PixelOverlay.Services
             _height = (int)_decoder.PixelHeight;
             if (_width <= 0 || _height <= 0 || _width > 8192 || _height > 8192)
                 throw new InvalidDataException("GIF dimensions must be between 1 and 8192 pixels.");
-            if ((long)_width * _height > MaxPixels)
-                throw new InvalidDataException("GIFs larger than 16 megapixels are not supported.");
             _canvas = new byte[(long)_width * _height * 4];
             _frameIndex = 0;
             _previousDisposal = 0;

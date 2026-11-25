@@ -1,4 +1,4 @@
-name: PixelOverlay Windows Build
+name: PixelOverlay Windows Release
 
 on:
   push:
@@ -6,35 +6,58 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: windows-2025
-
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
-
-      - name: Build PixelOverlay
+      - name: Build signed x64 MSIX package
         shell: pwsh
         run: |
-          msbuild .\PixelOverlay.sln `
-            /restore `
-            /m `
-            /p:Configuration=Release `
-            /p:Platform=x64
-
-      - name: Upload build files
-        if: always()
+          $out = Join-Path $env:GITHUB_WORKSPACE 'ReleasePackage'
+          if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+          & .\Build-Package.ps1 -Configuration Release -OutputDirectory $out
+          if ($LASTEXITCODE -ne 0) { throw "Build-Package.ps1 failed with exit code $LASTEXITCODE" }
+          Copy-Item .\Install.ps1 -Destination $out
+          Copy-Item .\RELEASE-INSTRUCTIONS.txt -Destination $out
+          $packages = @(Get-ChildItem -Path $out -Recurse -File | Where-Object { $_.Extension -in '.msix', '.appx' })
+          if ($packages.Count -eq 0) { throw 'No MSIX/AppX package was produced.' }
+          $certs = @(Get-ChildItem -Path $out -Recurse -Filter 'PixelOverlay.cer' -File)
+          if ($certs.Count -eq 0) { throw 'The signing certificate was not exported.' }
+          $zip = Join-Path $env:GITHUB_WORKSPACE 'PixelOverlay-v1.0.1-beta.1-windows-x64.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path (Join-Path $out '*') -DestinationPath $zip -CompressionLevel Optimal
+          Write-Host 'Package files:'
+          Get-ChildItem -Path $out -Recurse -File | ForEach-Object { Write-Host $_.FullName }
+          Get-FileHash -Path $zip -Algorithm SHA256 | Format-List
+      - name: Upload installable package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PixelOverlay-Windows
-          path: |
-            **/bin/**/Release/**/*.exe
-            **/bin/**/Release/**/*.msix
-            **/bin/**/Release/**/*.msixbundle
-          if-no-files-found: warn
+          name: PixelOverlay-v1.0.1-beta.1-windows-x64
+          path: PixelOverlay-v1.0.1-beta.1-windows-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+      - name: Publish GitHub prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = 'v1.0.1-beta.1'
+          $title = 'Pixel Overlay v1.0.1 Beta 1'
+          $zip = '.\PixelOverlay-v1.0.1-beta.1-windows-x64.zip'
+          gh release view $tag --json tagName 2>$null | Out-Null
+          $releaseExists = $LASTEXITCODE -eq 0
+          if ($releaseExists) {
+            gh release upload $tag $zip --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to upload the release asset.' }
+            gh release edit $tag --title $title --notes-file .\RELEASE-NOTES.md --prerelease
+          }
+          else {
+            gh release create $tag $zip --title $title --notes-file .\RELEASE-NOTES.md --prerelease --target $env:GITHUB_SHA
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub prerelease publication failed.' }

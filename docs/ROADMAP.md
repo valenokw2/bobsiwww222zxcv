@@ -1,18 +1,15 @@
 # Follow-up work
 
-## Viewport-relative sizing and placement
+## Viewport-relative overlay scaling
 
-The overlay and settings preview currently use `Stretch="Uniform"`, so the image automatically fits inside the current widget viewport while preserving its aspect ratio. The existing Scale control (10–500%) acts as zoom on top of that fitted size. The transform origin is kept at the viewport center and recalculated on `SizeChanged`.
+The overlay and settings preview now use proportional `Uniform` rendering so the complete image is visible inside the available widget area. The existing Scale control remains a zoom multiplier on top of that fitted baseline.
 
-The remaining sizing work is to give users explicit modes and make placement adapt predictably when the Game Bar window is resized:
+A dedicated follow-up is still needed for window-relative sizing behavior:
 
-- Add **Fit**, **Fill/Crop**, and **Actual Size** modes.
-- Add viewport-relative position anchors (percentages or normalized coordinates) alongside the current DIP offsets, so a placement can remain proportional after a resize.
-- Persist the sizing mode and anchor values in `OverlayState` and include them in presets.
-- Verify portrait, landscape, ultrawide, and repeated resize operations with static images and GIFs.
+- Add explicit image sizing modes such as **Fit**, **Fill/Crop**, and **Actual Size**.
+- Recalculate the image's fitted dimensions from the overlay viewport's current `ActualWidth` and `ActualHeight` whenever the Game Bar widget is resized.
+- Preserve the source aspect ratio, and keep the existing zoom, position, rotation, and opacity controls composable with the selected sizing mode.
+- Persist the selected mode and zoom settings in `OverlayState` and include them in presets.
+- Verify PNG, JPEG, and animated GIF rendering in portrait, landscape, and extreme-aspect-ratio windows, including repeated resize operations.
 
-## Image pipeline follow-up
-
-- The settings preview currently displays the first GIF frame; animated playback is implemented in the overlay, not in the settings preview.
-- Run manual Xbox Game Bar tests for file picker activation, drag-and-drop, cross-process settings propagation, transparency/click-through, pinned mode, and resize behavior.
-- CI validates the Windows UWP build and manifest resources, but it does not launch the widget inside the Game Bar host.
+The Game Bar overlay window supports user resizing, so scaling must follow the widget's client area rather than assume the initial 300 × 300 size.

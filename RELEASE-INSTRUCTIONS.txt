@@ -1,0 +1,39 @@
+PIXEL OVERLAY — BETA INSTALLATION
+=================================
+
+Requirements
+- Windows 10 version 2004 (build 19041) or later.
+- Xbox Game Bar installed and enabled.
+- 64-bit Windows.
+
+Install
+1. Extract the entire ZIP to a normal folder. Do not run Install.ps1 from inside the ZIP.
+2. Open PowerShell in the extracted folder.
+3. Run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   $package = Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -in '.msix', '.appx' -and $_.FullName -notmatch '[\\/]Dependencies[\\/]' } | Select-Object -First 1
+   .\Install.ps1 -PackagePath $package.FullName -CertificatePath .\PixelOverlay.cer
+
+4. Press Win+G, open the Widgets menu, and choose Pixel Overlay.
+5. Open Pixel Overlay Settings to import an image. PNG, JPG, JPEG and GIF are supported.
+
+Certificate
+This beta is signed with a self-signed test certificate. Install.ps1 imports the included
+PixelOverlay.cer into the current Windows user's Trusted People certificate store.
+This is expected for a sideload test build and is not a Microsoft Store signing certificate.
+Only install it if you trust this release and its source.
+
+Uninstall
+Open PowerShell and run:
+
+   Get-AppxPackage PixelOverlay | Remove-AppxPackage
+
+The local app data folder is not automatically deleted by this command.
+
+Troubleshooting
+- If Windows reports that the package publisher cannot be verified, confirm that the
+  included PixelOverlay.cer was imported successfully for the same Windows user.
+- If Add-AppxPackage reports a missing framework dependency, keep the full extracted
+  folder structure (including Dependencies) intact and run Install.ps1 again.
+- After installing, fully close and reopen Xbox Game Bar if the widget list does not refresh.
