@@ -158,7 +158,7 @@ finally {
 
 [xml]$validation = Get-Content -LiteralPath $OutputPath -Raw
 if ($validation.DocumentElement.GetAttribute('Uri') -ne $appInstallerUri) {
-    throw 'The App Installer manifest does not contain the expected stable update URI.'
+    throw 'The App Installer manifest does not contain the expected update URI.'
 }
 if (!$validation.SelectSingleNode("/*[local-name()='AppInstaller']/*[local-name()='MainPackage']")) {
     throw 'The App Installer manifest is missing MainPackage.'
