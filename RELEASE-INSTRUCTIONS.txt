@@ -5,7 +5,7 @@ Install
 1. Download PixelOverlay-Setup.exe from the official GitHub Releases page.
 2. Run the installer normally from your Windows account. Approve the administrator prompt when Windows asks to trust the publisher certificate.
 3. The setup wizard checks the installed Pixel Overlay version and the official update channel.
-4. For a new installation, choose one of the Windows app package volumes shown by the wizard. Windows then manages the protected package folder.
+4. Review the detected install state and the Windows-managed package location shown by the wizard.
 5. Wait for the installation progress bar to complete.
 6. Press Win+G, open Widgets, and select Pixel Overlay.
 
@@ -19,12 +19,12 @@ Version handling
 
 Install location
 Pixel Overlay is an MSIX app. Windows owns the protected package directory (normally under C:\Program Files\WindowsApps), so the setup cannot install it into an arbitrary folder such as D:\Apps\PixelOverlay.
-For a new installation, the wizard can select a package volume already registered with Windows. The default system volume is preselected. Additional drives must first be registered as Windows app package volumes in Windows Settings or with Add-AppxVolume.
-When updating an existing installation, the current package volume is retained.
+For a new installation, Windows App Installer uses the default app package volume configured in Windows. This installer displays that location but does not change the global Windows default. To change where new apps are stored, use Windows Settings > System > Storage > Advanced storage settings > Where new content is saved > New apps will save to, then run setup again.
+When updating an existing installation, Windows manages the package location. The setup does not move the installed package.
 
 What the setup does
 - Checks for 64-bit Windows 10 version 2004 (build 19041) or later.
-- Detects the installed and available app versions before deployment.
+- Detects the installed and available app versions and displays the Windows default package location before deployment.
 - Requests administrator approval once to add the publisher certificate to Local Computer > Trusted People. The app itself is installed for the signed-in user.
 - Downloads the signed App Installer manifest and installs Pixel Overlay with its required x64 framework dependencies.
 - Shows the current installation stage and a progress indicator while Windows registers the package.
