@@ -140,7 +140,28 @@ try {
 
     Set-InstallerProgress -Percent 40 -Status 'Starting Windows App Installer...'
 
-    if (![string]::IsNullOrWhiteSpace($VolumePath) -and !$installedPackage) {
+    if ($installedPackage) {
+        $installedVolume = $null
+        $installedLocation = [string]$installedPackage.InstallLocation
+        foreach ($candidateVolume in @(Get-AppxVolume | Where-Object { !$_.IsOffline })) {
+            $candidatePath = [string]$candidateVolume.PackageStorePath
+            if (![string]::IsNullOrWhiteSpace($candidatePath) -and
+                $installedLocation.StartsWith($candidatePath.TrimEnd('\\') + '\\', [StringComparison]::OrdinalIgnoreCase)) {
+                $installedVolume = $candidateVolume
+                break
+            }
+        }
+
+        if ($installedVolume) {
+            Write-Host "Keeping the existing Windows-managed package volume: $($installedVolume.PackageStorePath)"
+            Add-AppxPackage -Path $manifestPath -AppInstallerFile -Volume $installedVolume -ErrorAction Stop
+        }
+        else {
+            Write-Warning 'The existing package volume could not be identified. Windows will use its normal update location.'
+            Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
+        }
+    }
+    elseif (![string]::IsNullOrWhiteSpace($VolumePath)) {
         $volume = Get-AppxVolume | Where-Object {
             $_.PackageStorePath -eq $VolumePath -and !$_.IsOffline
         } | Select-Object -First 1
@@ -153,7 +174,6 @@ try {
         Add-AppxPackage -Path $manifestPath -AppInstallerFile -Volume $volume -ErrorAction Stop
     }
     else {
-        # Updates keep the existing Windows-managed package location.
         Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
     }
 
