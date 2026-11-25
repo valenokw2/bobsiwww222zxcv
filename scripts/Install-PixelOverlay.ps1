@@ -53,7 +53,7 @@ try {
         Import-Certificate -FilePath $CertificatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
     }
 
-    $appInstallerUri = 'https://raw.githubusercontent.com/valenokw2/bobsiwww222zxcv/main/PixelOverlay.appinstaller'
+    $appInstallerUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller'
     Write-Host "Downloading update manifest: $appInstallerUri"
     Invoke-WebRequest -Uri $appInstallerUri -OutFile $manifestPath -UseBasicParsing -MaximumRedirection 5
 
