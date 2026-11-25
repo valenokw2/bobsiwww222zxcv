@@ -62,6 +62,8 @@ namespace PixelOverlay.Services
             return await folder.GetFileAsync(item.StoredName);
         }
 
+        // Deletion is deliberately separate from shared state. The calling window commits its
+        // local collection/state snapshot after the file operation succeeds.
         public async Task DeleteAsync(ImageRecord item)
         {
             if (item == null) return;
@@ -71,13 +73,15 @@ namespace PixelOverlay.Services
                 await file.DeleteAsync();
             }
             catch (FileNotFoundException) { }
-            SettingsStore.Current.Library.Remove(item);
-            if (SettingsStore.Current.State.SelectedImageId == item.Id)
-                SettingsStore.Current.State.SelectedImageId = null;
-            SettingsStore.Current.NotifyChanged();
         }
 
-        public ImageRecord Selected() => SettingsStore.Current.Library.FirstOrDefault(x => x.Id == SettingsStore.Current.State.SelectedImageId);
+        public ImageRecord Selected()
+        {
+            var snapshot = SettingsStore.Current.GetSnapshot();
+            if (snapshot.State == null || snapshot.Library == null) return null;
+            return snapshot.Library.FirstOrDefault(x =>
+                x != null && string.Equals(x.Id, snapshot.State.SelectedImageId, StringComparison.Ordinal));
+        }
 
         public Task<BitmapImage> LoadBitmapAsync(ImageRecord item)
         {
@@ -96,8 +100,6 @@ namespace PixelOverlay.Services
                 if (sourceWidth == 0 || sourceHeight == 0)
                     throw new InvalidDataException("The image has no pixels.");
 
-                // Decode close to the widget's useful resolution instead of allocating the full
-                // source bitmap. A 12-megapixel ceiling also protects against extreme aspect ratios.
                 var scale = Math.Min(1d, (double)Math.Max(1u, maxDecodeEdge) / Math.Max(sourceWidth, sourceHeight));
                 var sourcePixels = (double)sourceWidth * sourceHeight;
                 if (sourcePixels > MaxDecodedPixels)

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Gaming.XboxGameBar;
 using PixelOverlay.Models;
@@ -16,6 +17,10 @@ namespace PixelOverlay.Views
         private string _loadedId;
         private string _loadingId;
         private int _imageLoadGeneration;
+        private bool _cleaned;
+        private long _snapshotRevision = -1;
+        private PersistedSettings _snapshot;
+        private SettingsStore.SettingsSubscription _subscription;
 
         public OverlayPage() { InitializeComponent(); Loaded += OnLoaded; Unloaded += OnUnloaded; }
         public OverlayPage(XboxGameBarWidget widget) : this() { _widget = widget; }
@@ -28,29 +33,42 @@ namespace PixelOverlay.Views
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
+            _cleaned = false;
             try
             {
-                SettingsStore.Current.StateChanged += OnStateChanged;
+                await SettingsStore.Current.LoadAsync();
+                _subscription = SettingsStore.Current.Subscribe(Dispatcher, OnStoreSnapshotChanged);
+                ApplyInitialSnapshot(SettingsStore.Current.GetSnapshot());
+
                 if (_widget != null)
                 {
                     _widget.RequestedOpacityChanged += OnWidgetStateChanged;
                     _widget.GameBarDisplayModeChanged += OnWidgetStateChanged;
                     _widget.ClickThroughEnabledChanged += OnWidgetStateChanged;
                 }
-                await RefreshAsync();
+
+                await RefreshSafelyAsync();
             }
             catch (Exception ex) { AppDiagnostics.Log("Overlay page load", ex); }
         }
 
-        private void OnUnloaded(object sender, RoutedEventArgs e)
+        private void OnUnloaded(object sender, RoutedEventArgs e) => Cleanup();
+
+        // Called both by Unloaded and Window.Closed. It is intentionally idempotent.
+        public void Cleanup()
         {
-            SettingsStore.Current.StateChanged -= OnStateChanged;
+            if (_cleaned) return;
+            _cleaned = true;
+
+            _subscription?.Dispose();
+            _subscription = null;
             if (_widget != null)
             {
                 _widget.RequestedOpacityChanged -= OnWidgetStateChanged;
                 _widget.GameBarDisplayModeChanged -= OnWidgetStateChanged;
                 _widget.ClickThroughEnabledChanged -= OnWidgetStateChanged;
             }
+
             _imageLoadGeneration++;
             _loadingId = null;
             _loadedId = null;
@@ -59,40 +77,57 @@ namespace PixelOverlay.Views
             OverlayImage.Source = null;
         }
 
-        private async void OnStateChanged(object sender, EventArgs e)
+        private void ApplyInitialSnapshot(PersistedSettings snapshot)
         {
-            try { await RefreshAsync(); }
-            catch (Exception ex) { AppDiagnostics.Log("Overlay state update", ex); }
+            if (snapshot == null) return;
+            _snapshot = snapshot;
+            _snapshotRevision = snapshot.Revision;
+        }
+
+        private void OnStoreSnapshotChanged(PersistedSettings snapshot)
+        {
+            if (_cleaned || snapshot == null || snapshot.Revision <= _snapshotRevision) return;
+            _snapshot = snapshot;
+            _snapshotRevision = snapshot.Revision;
+            _ = RefreshSafelyAsync();
         }
 
         private async void OnWidgetStateChanged(XboxGameBarWidget sender, object args)
         {
             try
             {
-                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () => { _ = RefreshSafelyAsync(); });
+                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
+                {
+                    if (!_cleaned) _ = RefreshSafelyAsync();
+                });
             }
             catch (Exception ex) { AppDiagnostics.Log("Game Bar widget state update", ex); }
         }
 
         private async Task RefreshSafelyAsync()
         {
-            try { await RefreshAsync(); }
+            try
+            {
+                if (!_cleaned && _snapshot != null) await RefreshAsync(_snapshot);
+            }
             catch (Exception ex) { AppDiagnostics.Log("Overlay refresh", ex); }
         }
 
-        private async Task RefreshAsync()
+        private async Task RefreshAsync(PersistedSettings snapshot)
         {
+            if (_cleaned || snapshot == null) return;
+            var state = snapshot.State ?? new OverlayState();
+
             UpdateTransformCenter();
-            var state = SettingsStore.Current.State;
             OverlayImage.Opacity = state.Opacity / 100d;
             OverlayTransform.ScaleX = OverlayTransform.ScaleY = state.Scale / 100d;
             OverlayTransform.TranslateX = state.PositionX;
             OverlayTransform.TranslateY = state.PositionY;
             OverlayTransform.Rotation = state.Rotation;
-            // RequestedOpacity belongs to the Game Bar surface and only affects this image-only widget.
             OverlaySurface.Opacity = _widget == null ? 1 : _widget.RequestedOpacity / 100d;
 
-            var item = _images.Selected();
+            var item = snapshot.Library?.FirstOrDefault(x =>
+                x != null && string.Equals(x.Id, state.SelectedImageId, StringComparison.Ordinal));
             if (item == null)
             {
                 _imageLoadGeneration++;
@@ -109,12 +144,10 @@ namespace PixelOverlay.Views
             Hint.Visibility = Visibility.Collapsed;
             if (_loadedId == item.Id)
             {
-                if (item.IsGif) _gif?.UpdateSchedule();
+                if (item.IsGif) _gif?.UpdateSchedule(state.GifSpeed, state.GifPlaying);
                 return;
             }
 
-            // State changes can arrive while a file is decoding. Do not start duplicate loads
-            // for the same selection, but invalidate a load as soon as the selected ID changes.
             if (_loadingId == item.Id) return;
 
             var generation = ++_imageLoadGeneration;
@@ -137,12 +170,12 @@ namespace PixelOverlay.Views
                     _gif = player;
                     player.FrameChanged += (s, e) =>
                     {
-                        if (generation == _imageLoadGeneration && ReferenceEquals(_gif, player))
+                        if (!_cleaned && generation == _imageLoadGeneration && ReferenceEquals(_gif, player))
                             OverlayImage.Source = player.CurrentFrame;
                     };
                     player.PlaybackFailed += (s, e) =>
                     {
-                        if (generation == _imageLoadGeneration && ReferenceEquals(_gif, player))
+                        if (!_cleaned && generation == _imageLoadGeneration && ReferenceEquals(_gif, player))
                         {
                             Hint.Text = "GIF playback stopped because a frame could not be decoded";
                             Hint.Visibility = Visibility.Visible;
@@ -155,6 +188,7 @@ namespace PixelOverlay.Views
                         return;
                     }
                     OverlayImage.Source = player.CurrentFrame;
+                    player.UpdateSchedule(state.GifSpeed, state.GifPlaying);
                 }
                 else
                 {
@@ -196,7 +230,7 @@ namespace PixelOverlay.Views
 
         private bool IsCurrentLoad(int generation, string imageId)
         {
-            return generation == _imageLoadGeneration && _images.Selected()?.Id == imageId;
+            return !_cleaned && generation == _imageLoadGeneration && _snapshot?.State?.SelectedImageId == imageId;
         }
     }
 }
