@@ -144,8 +144,9 @@ namespace PixelOverlay.Views
                 _loadedId = item.Id;
                 Hint.Visibility = Visibility.Collapsed;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                AppDiagnostics.Log(item.IsGif ? "Overlay GIF load" : "Overlay image load", ex);
                 if (IsCurrentLoad(generation, item.Id))
                 {
                     _loadedId = null;
