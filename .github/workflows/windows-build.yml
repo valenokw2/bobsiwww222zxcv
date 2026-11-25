@@ -9,7 +9,7 @@ on:
       version:
         description: "MSIX version in four-part format, for example 1.0.2.0"
         required: true
-        default: "1.0.2.0"
+        default: "1.0.3.0"
         type: string
       prerelease:
         description: "Publish as a beta/prerelease"
@@ -86,9 +86,21 @@ jobs:
             if ([int]$part -gt 65535) { throw "MSIX version component is greater than 65535: $part" }
           }
 
+          $stableAppInstallerUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller'
+          if ($isPrerelease) {
+            $appInstallerUri = "https://github.com/valenokw2/bobsiwww222zxcv/releases/download/$tag/PixelOverlay.appinstaller"
+            $setupUpdateUri = ''
+          }
+          else {
+            $appInstallerUri = $stableAppInstallerUri
+            $setupUpdateUri = $stableAppInstallerUri
+          }
+
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "prerelease=$($isPrerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "appinstaller_uri=$appInstallerUri" >> $env:GITHUB_OUTPUT
+          "setup_update_uri=$setupUpdateUri" >> $env:GITHUB_OUTPUT
           Write-Host "Release tag: $tag"
           Write-Host "MSIX version: $version"
           Write-Host "Prerelease: $isPrerelease"
@@ -111,6 +123,8 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_APPINSTALLER_URI: ${{ steps.release.outputs.appinstaller_uri }}
+          RELEASE_SETUP_UPDATE_URI: ${{ steps.release.outputs.setup_update_uri }}
         run: |
           $pfxPath = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Signing.pfx'
           $bytes = [Convert]::FromBase64String($env:PIXEL_OVERLAY_SIGNING_PFX_BASE64)
@@ -138,27 +152,39 @@ jobs:
             $mainAsset = Join-Path $assetDirectory $mainName
             Copy-Item -LiteralPath $mainPackages[0].FullName -Destination $mainAsset
 
+            # Keep only x64 and neutral framework packages. Release builds may expose a
+            # different framework set than Debug builds (for example, .NET Native output).
             $dependencyDirectories = @(Get-ChildItem -Path $packageOutput -Directory -Recurse |
               Where-Object { $_.Name -eq 'Dependencies' })
-            $dependencyAssets = @(
+            $dependencyFiles = @(
               foreach ($directory in $dependencyDirectories) {
-                $x64 = Join-Path $directory.FullName 'x64'
-                if (Test-Path $x64) {
-                  Get-ChildItem -Path $x64 -File |
-                    Where-Object { $_.Extension -in '.appx', '.msix' }
+                foreach ($architecture in @('x64', 'neutral')) {
+                  $architectureDirectory = Join-Path $directory.FullName $architecture
+                  if (Test-Path -LiteralPath $architectureDirectory) {
+                    Get-ChildItem -Path $architectureDirectory -File |
+                      Where-Object { $_.Extension -in '.appx', '.msix' }
+                  }
                 }
               }
             )
-            if ($dependencyAssets.Count -eq 0) {
-              throw 'No x64 framework dependency packages were produced. Refusing to publish an incomplete App Installer manifest.'
-            }
 
             $dependencyPaths = @()
-            foreach ($dependency in $dependencyAssets) {
-              $destination = Join-Path $assetDirectory $dependency.Name
+            $dependencyResourceNames = @()
+            $dependencyIndex = 0
+            foreach ($dependency in $dependencyFiles) {
+              $dependencyIndex++
+              $destinationName = $dependency.Name
+              $destination = Join-Path $assetDirectory $destinationName
+              if (Test-Path -LiteralPath $destination) {
+                $destinationName = '{0}.dependency{1}{2}' -f $dependency.BaseName, $dependencyIndex, $dependency.Extension
+                $destination = Join-Path $assetDirectory $destinationName
+              }
               Copy-Item -LiteralPath $dependency.FullName -Destination $destination
               $dependencyPaths += $destination
+              $resourceName = 'PixelOverlayInstaller.Payload.Dependencies.{0:D3}-{1}' -f $dependencyIndex, $destinationName
+              $dependencyResourceNames += $resourceName
             }
+            Write-Host "Collected $($dependencyPaths.Count) compatible framework package(s) for the installer payload."
 
             $certificateSource = Join-Path $packageOutput 'PixelOverlay.cer'
             if (!(Test-Path $certificateSource)) {
@@ -175,6 +201,7 @@ jobs:
               Version = $env:RELEASE_VERSION
               ReleaseTag = '${{ steps.release.outputs.tag }}'
               RepositoryFullName = 'valenokw2/bobsiwww222zxcv'
+              ManifestUri = $env:RELEASE_APPINSTALLER_URI
               OutputPath = $appInstallerPath
             }
             & .\scripts\Build-AppInstaller.ps1 @appInstallerArgs
@@ -197,7 +224,9 @@ jobs:
             throw 'The single-file installer source files are missing.'
           }
 
-          $installerCode = (Get-Content -LiteralPath $installerSource -Raw).Replace('__APP_VERSION__', $env:RELEASE_VERSION)
+          $installerCode = Get-Content -LiteralPath $installerSource -Raw
+          $installerCode = $installerCode.Replace('__APP_VERSION__', $env:RELEASE_VERSION)
+          $installerCode = $installerCode.Replace('__APP_INSTALLER_URI__', $env:RELEASE_SETUP_UPDATE_URI)
           $generatedSource = Join-Path $env:RUNNER_TEMP 'PixelOverlayInstaller.cs'
           [IO.File]::WriteAllText($generatedSource, $installerCode, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -208,11 +237,13 @@ jobs:
           $resourceArguments = @(
             "/resource:$mainAsset,PixelOverlayInstaller.Payload.PixelOverlay.msix",
             "/resource:$(Join-Path $assetDirectory 'PixelOverlay.cer'),PixelOverlayInstaller.Payload.PixelOverlay.cer",
-            "/resource:$(Join-Path $assetDirectory 'Microsoft.NET.CoreFramework.Debug.2.2.appx'),PixelOverlayInstaller.Payload.Microsoft.NET.CoreFramework.Debug.2.2.appx",
-            "/resource:$(Join-Path $assetDirectory 'Microsoft.NET.CoreRuntime.2.2.appx'),PixelOverlayInstaller.Payload.Microsoft.NET.CoreRuntime.2.2.appx",
-            "/resource:$(Join-Path $assetDirectory 'Microsoft.VCLibs.x64.14.00.appx'),PixelOverlayInstaller.Payload.Microsoft.VCLibs.x64.14.00.appx",
             "/resource:$installerScript,PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1"
           )
+          foreach ($resourceName in $dependencyResourceNames) {
+            $fileName = $resourceName.Substring('PixelOverlayInstaller.Payload.Dependencies.'.Length + 4)
+            $resourcePath = Join-Path $assetDirectory $fileName
+            $resourceArguments += "/resource:$resourcePath,$resourceName"
+          }
           $compilerArguments = @(
             '/nologo',
             '/target:winexe',
@@ -226,7 +257,7 @@ jobs:
 
           & $csc @compilerArguments
           if ($LASTEXITCODE -ne 0) { throw "Pixel Overlay single-file installer compilation failed with exit code $LASTEXITCODE." }
-          if (!(Test-Path -LiteralPath $setupPath) -or (Get-Item -LiteralPath $setupPath).Length -lt 10000000) {
+          if (!(Test-Path -LiteralPath $setupPath) -or (Get-Item -LiteralPath $setupPath).Length -lt 100000) {
             throw 'The embedded setup executable was not created or is unexpectedly small.'
           }
 
@@ -246,16 +277,18 @@ jobs:
           $requiredResources = @(
             'PixelOverlayInstaller.Payload.PixelOverlay.msix',
             'PixelOverlayInstaller.Payload.PixelOverlay.cer',
-            'PixelOverlayInstaller.Payload.Microsoft.NET.CoreFramework.Debug.2.2.appx',
-            'PixelOverlayInstaller.Payload.Microsoft.NET.CoreRuntime.2.2.appx',
-            'PixelOverlayInstaller.Payload.Microsoft.VCLibs.x64.14.00.appx',
             'PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1'
           )
           $missingResources = @($requiredResources | Where-Object { $_ -notin $embeddedResources })
           if ($missingResources.Count -gt 0) {
             throw "The setup EXE is missing embedded payload resources: $($missingResources -join ', ')"
           }
-          Write-Host "Verified all $($requiredResources.Count) embedded payload resources."
+          $embeddedDependencyPrefix = 'PixelOverlayInstaller.Payload.Dependencies.'
+          $embeddedDependencies = @($embeddedResources | Where-Object { $_.StartsWith($embeddedDependencyPrefix, [StringComparison]::Ordinal) })
+          if ($embeddedDependencies.Count -ne $dependencyPaths.Count) {
+            throw "Expected $($dependencyPaths.Count) embedded dependency resource(s), found $($embeddedDependencies.Count)."
+          }
+          Write-Host "Verified $($requiredResources.Count) core resources and $($embeddedDependencies.Count) dynamic dependency resources."
 
           Write-Host "Created signed self-contained installer: $setupPath"
           Write-Host "Embedded payload size: $((Get-Item -LiteralPath $setupPath).Length) bytes"
@@ -311,6 +344,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation or update failed.' }
 
       - name: Publish the stable App Installer manifest
+        if: steps.release.outputs.prerelease == 'false'
         shell: pwsh
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}

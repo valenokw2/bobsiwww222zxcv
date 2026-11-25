@@ -20,7 +20,7 @@ namespace PixelOverlayInstaller
     internal static class Program
     {
         internal const string AppVersion = "__APP_VERSION__";
-        internal const string AppInstallerUri = "https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller";
+        internal const string AppInstallerUri = "__APP_INSTALLER_URI__";
         internal const string CertificateThumbprint = "A68A682C3193352F350F0FC6D7A5F8990863E150";
 
         [STAThread]
@@ -109,12 +109,7 @@ namespace PixelOverlayInstaller
                 "PixelOverlayInstaller.Payload.PixelOverlay.cer",
                 "PixelOverlay.cer");
             ExtractResource("PixelOverlayInstaller.Payload.PixelOverlay.msix", "PixelOverlay.msix");
-            ExtractResource("PixelOverlayInstaller.Payload.Microsoft.NET.CoreFramework.Debug.2.2.appx",
-                "Microsoft.NET.CoreFramework.Debug.2.2.appx");
-            ExtractResource("PixelOverlayInstaller.Payload.Microsoft.NET.CoreRuntime.2.2.appx",
-                "Microsoft.NET.CoreRuntime.2.2.appx");
-            ExtractResource("PixelOverlayInstaller.Payload.Microsoft.VCLibs.x64.14.00.appx",
-                "Microsoft.VCLibs.x64.14.00.appx");
+            ExtractEmbeddedDependencies();
 
             Panel header = new Panel();
             header.Dock = DockStyle.Top;
@@ -267,6 +262,36 @@ namespace PixelOverlayInstaller
             return path;
         }
 
+        private void ExtractEmbeddedDependencies()
+        {
+            const string prefix = "PixelOverlayInstaller.Payload.Dependencies.";
+            string[] resources = Assembly.GetExecutingAssembly().GetManifestResourceNames();
+            Array.Sort(resources, StringComparer.OrdinalIgnoreCase);
+            int extracted = 0;
+
+            foreach (string resourceName in resources)
+            {
+                if (!resourceName.StartsWith(prefix, StringComparison.Ordinal))
+                    continue;
+
+                string fileName = resourceName.Substring(prefix.Length);
+                if (String.IsNullOrWhiteSpace(fileName) ||
+                    fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                    fileName.IndexOf('/') >= 0 || fileName.IndexOf('\\') >= 0)
+                    throw new InvalidOperationException("Installer contains an invalid dependency resource name.");
+
+                string extension = Path.GetExtension(fileName);
+                if (!String.Equals(extension, ".appx", StringComparison.OrdinalIgnoreCase) &&
+                    !String.Equals(extension, ".msix", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Installer contains an unsupported dependency resource: " + fileName);
+
+                ExtractResource(resourceName, fileName);
+                extracted++;
+            }
+
+            AppendLog("Extracted " + extracted + " embedded framework dependency package(s).");
+        }
+
         private void AppendLog(string message)
         {
             try
@@ -348,19 +373,17 @@ namespace PixelOverlayInstaller
                 }
                 else if (detectedMode == "Current")
                 {
-                    statusTitle.Text = "Pixel Overlay is up to date";
-                    statusBody.Text = "Version " + installedVersion + " is already installed. No package changes are required.";
-                    actionButton.Text = "Close";
+                    statusTitle.Text = "Pixel Overlay is already installed";
+                    statusBody.Text = "Version " + installedVersion + " is present. Continue to verify this setup and connect its configured update channel without reinstalling the app.";
+                    actionButton.Text = "Continue";
                     actionButton.Enabled = true;
-                    installedSuccessfully = true;
                 }
                 else if (detectedMode == "Newer")
                 {
                     statusTitle.Text = "A newer version is already installed";
-                    statusBody.Text = "Setup will not downgrade your installation.";
-                    actionButton.Text = "Close";
+                    statusBody.Text = "Setup will not downgrade version " + installedVersion + ". Continue to verify the installation and update-channel configuration.";
+                    actionButton.Text = "Continue";
                     actionButton.Enabled = true;
-                    installedSuccessfully = true;
                 }
                 else
                 {
@@ -538,7 +561,7 @@ namespace PixelOverlayInstaller
                         " -Action " + action +
                         " -PayloadDirectory " + QuoteArgument(payloadDirectory) +
                         " -TargetVersion " + QuoteArgument(Program.AppVersion) +
-                        " -AppInstallerUri " + QuoteArgument(Program.AppInstallerUri) +
+                        (String.IsNullOrWhiteSpace(Program.AppInstallerUri) ? "" : " -AppInstallerUri " + QuoteArgument(Program.AppInstallerUri)) +
                         (forceApplicationShutdown ? " -ForceApplicationShutdown" : "");
 
                     process.StartInfo = new ProcessStartInfo();
