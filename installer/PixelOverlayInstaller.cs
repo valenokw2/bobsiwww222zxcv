@@ -401,40 +401,7 @@ namespace PixelOverlayInstaller
                 try
                 {
                     EnsureCertificateTrusted();
-                    BeginInvoke((MethodInvoker)delegate
-                    {
-                        RunPowerShell("Install", delegate(int exitCode, string output)
-                        {
-                            string successLine = FindLine(output, "PIXEL_SETUP_SUCCESS|");
-                            string warningLine = FindLine(output, "PIXEL_SETUP_WARNING|");
-                            string failureLine = FindLine(output, "PIXEL_SETUP_FAILURE|");
-
-                            SetBusy(false, "");
-                            if (exitCode == 0 && successLine != null)
-                            {
-                                installedSuccessfully = true;
-                                statusTitle.Text = "Pixel Overlay is ready";
-                                statusBody.Text = successLine.Substring("PIXEL_SETUP_SUCCESS|".Length);
-                                if (!String.IsNullOrEmpty(warningLine))
-                                    statusBody.Text += Environment.NewLine + warningLine.Substring("PIXEL_SETUP_WARNING|".Length);
-                                actionButton.Text = "Done";
-                                actionButton.Enabled = true;
-                                progress.Value = 100;
-                                AppendLog("Installation succeeded.");
-                            }
-                            else
-                            {
-                                statusTitle.Text = "Installation could not be completed";
-                                statusBody.Text = failureLine != null
-                                    ? failureLine.Substring("PIXEL_SETUP_FAILURE|".Length)
-                                    : "PowerShell exited with code " + exitCode + ". Review the setup log for details.";
-                                actionButton.Text = "Retry";
-                                actionButton.Enabled = true;
-                                detectedMode = "Error";
-                                AppendLog("Installation failed (exit " + exitCode + "): " + output);
-                            }
-                        });
-                    });
+                    BeginInvoke((MethodInvoker)delegate { RunInstallAttempt(false); });
                 }
                 catch (Exception ex)
                 {
@@ -449,6 +416,84 @@ namespace PixelOverlayInstaller
                     });
                 }
             });
+        }
+
+        private void RunInstallAttempt(bool forceApplicationShutdown)
+        {
+            if (forceApplicationShutdown)
+            {
+                SetBusy(true, "Closing applications that are holding shared Windows package files...");
+                statusTitle.Text = "Retrying installation";
+                actionButton.Text = "Retrying...";
+            }
+
+            RunPowerShell("Install", delegate(int exitCode, string output)
+            {
+                string packagesInUseLine = FindLine(output, "PIXEL_SETUP_PACKAGES_IN_USE|");
+                if (exitCode != 0 && packagesInUseLine != null && !forceApplicationShutdown)
+                {
+                    string blockingDetails = packagesInUseLine.Substring("PIXEL_SETUP_PACKAGES_IN_USE|".Length);
+                    string prompt =
+                        "Windows cannot finish installing Pixel Overlay because shared app components are currently in use.\r\n\r\n" +
+                        "Windows reported these packages as busy:\r\n" + blockingDetails + "\r\n\r\n" +
+                        "You can close these apps yourself and retry, or let Windows force-close active apps that use the package and its dependencies. " +
+                        "Unsaved work in those apps may be lost. Save your work before continuing.\r\n\r\n" +
+                        "Force-close the affected apps and retry now?";
+
+                    AppendLog("Package-in-use conflict detected. Asking before force shutdown. " + blockingDetails);
+                    DialogResult answer = MessageBox.Show(
+                        this,
+                        prompt,
+                        "Applications are using Windows package files",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning,
+                        MessageBoxDefaultButton.Button2);
+
+                    if (answer == DialogResult.Yes)
+                    {
+                        AppendLog("User approved ForceApplicationShutdown retry.");
+                        RunInstallAttempt(true);
+                    }
+                    else
+                    {
+                        SetBusy(false, "Installation paused. Save your work, close the listed apps, and select Retry.");
+                        statusTitle.Text = "Close the affected apps to continue";
+                        actionButton.Text = "Retry";
+                        actionButton.Enabled = true;
+                        detectedMode = "Error";
+                    }
+                    return;
+                }
+
+                string successLine = FindLine(output, "PIXEL_SETUP_SUCCESS|");
+                string warningLine = FindLine(output, "PIXEL_SETUP_WARNING|");
+                string failureLine = FindLine(output, "PIXEL_SETUP_FAILURE|");
+
+                SetBusy(false, "");
+                if (exitCode == 0 && successLine != null)
+                {
+                    installedSuccessfully = true;
+                    statusTitle.Text = "Pixel Overlay is ready";
+                    statusBody.Text = successLine.Substring("PIXEL_SETUP_SUCCESS|".Length);
+                    if (!String.IsNullOrEmpty(warningLine))
+                        statusBody.Text += Environment.NewLine + warningLine.Substring("PIXEL_SETUP_WARNING|".Length);
+                    actionButton.Text = "Done";
+                    actionButton.Enabled = true;
+                    progress.Value = 100;
+                    AppendLog("Installation succeeded.");
+                }
+                else
+                {
+                    statusTitle.Text = "Installation could not be completed";
+                    statusBody.Text = failureLine != null
+                        ? failureLine.Substring("PIXEL_SETUP_FAILURE|".Length)
+                        : "PowerShell exited with code " + exitCode + ". Review the setup log for details.";
+                    actionButton.Text = "Retry";
+                    actionButton.Enabled = true;
+                    detectedMode = "Error";
+                    AppendLog("Installation failed (exit " + exitCode + "): " + output);
+                }
+            }, forceApplicationShutdown);
         }
 
         private void EnsureCertificateTrusted()
@@ -479,7 +524,7 @@ namespace PixelOverlayInstaller
             }
         }
 
-        private void RunPowerShell(string action, Action<int, string> completed)
+        private void RunPowerShell(string action, Action<int, string> completed, bool forceApplicationShutdown = false)
         {
             ThreadPool.QueueUserWorkItem(delegate
             {
@@ -493,7 +538,8 @@ namespace PixelOverlayInstaller
                         " -Action " + action +
                         " -PayloadDirectory " + QuoteArgument(payloadDirectory) +
                         " -TargetVersion " + QuoteArgument(Program.AppVersion) +
-                        " -AppInstallerUri " + QuoteArgument(Program.AppInstallerUri);
+                        " -AppInstallerUri " + QuoteArgument(Program.AppInstallerUri) +
+                        (forceApplicationShutdown ? " -ForceApplicationShutdown" : "");
 
                     process.StartInfo = new ProcessStartInfo();
                     process.StartInfo.FileName = Path.Combine(
@@ -505,6 +551,8 @@ namespace PixelOverlayInstaller
                     process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
                     process.StartInfo.RedirectStandardOutput = true;
                     process.StartInfo.RedirectStandardError = true;
+                    process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+                    process.StartInfo.StandardErrorEncoding = Encoding.UTF8;
 
                     process.OutputDataReceived += delegate(object s, DataReceivedEventArgs data)
                     {
