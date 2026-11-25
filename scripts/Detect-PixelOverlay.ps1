@@ -69,7 +69,8 @@ try {
 
     $installedVolumePath = ''
     if ($installedPackage) {
-        foreach ($volume in $volumes) {
+        $selectableVolumeCount = 0
+    foreach ($volume in $volumes) {
             $packageStorePath = [string]$volume.PackageStorePath
             if ($packageStorePath -and
                 $installedLocation.StartsWith($packageStorePath, [StringComparison]::OrdinalIgnoreCase)) {
@@ -102,9 +103,10 @@ try {
 
         $isDefault = $path.Equals($defaultVolumePath, [StringComparison]::OrdinalIgnoreCase)
         $lines.Add("Volume=$name|$path|$([int]$isDefault)")
+        $selectableVolumeCount++
     }
 
-    if ($mode -eq 'Install' -and !$lines.Exists({ param($line) $line.StartsWith('Volume=') })) {
+    if ($mode -eq 'Install' -and $selectableVolumeCount -eq 0) {
         throw 'No selectable online MSIX package volume was found.'
     }
 
