@@ -27,7 +27,7 @@ function Set-InstallerProgress {
             [System.IO.File]::WriteAllText(
                 $ProgressFile,
                 "$Percent|$safeStatus",
-                (New-Object System.Text.UTF8Encoding($false))
+                ([System.Text.UTF8Encoding]::new($false))
             )
         }
         catch {
@@ -172,7 +172,7 @@ try {
 
     Set-InstallerProgress -Percent 90 -Status 'Verifying the installed package...'
     $installedPackage = Get-AppxPackage -Name 'PixelOverlay' |
-        Sort-Object Version -Descending |
+        Sort-Object { [version]$_.Version } -Descending |
         Select-Object -First 1
     if (!$installedPackage) {
         throw 'Windows did not register the Pixel Overlay package after installation.'
