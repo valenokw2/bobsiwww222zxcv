@@ -30,7 +30,7 @@ Requirements
 
 Uninstall
 Open Windows Settings > Apps > Installed apps, find Pixel Overlay, and choose Uninstall.
-The app's local settings and image library are normally retained by Windows package removal; the publisher certificate remains in Local Computer > Trusted People until removed separately.
+Updating Pixel Overlay keeps its app data. A full uninstall may remove app-local settings and image-library data, so back up anything you want to keep first. The publisher certificate remains in Local Computer > Trusted People until removed separately.
 
 Troubleshooting
 - If the package publisher cannot be verified, confirm that setup completed and installed the included certificate into Local Computer > Trusted People.
