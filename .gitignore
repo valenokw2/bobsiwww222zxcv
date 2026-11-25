@@ -1,6 +1,11 @@
-﻿bin/
+bin/
 obj/
 .vs/
 *.user
 *.suo
 *.pdb
+*.pfx
+*.p12
+*.snk
+ReleaseAssets/
+AppPackages/
