@@ -2,7 +2,9 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$CertificatePath,
-    [switch]$TrustCertificateOnly
+    [switch]$TrustCertificateOnly,
+    [string]$VolumePath,
+    [string]$ProgressFile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,10 +13,35 @@ $null = New-Item -ItemType Directory -Force -Path $logDirectory
 $logPath = Join-Path $logDirectory 'Installer.log'
 $manifestPath = Join-Path $env:TEMP ("PixelOverlay-" + [guid]::NewGuid().ToString('N') + '.appinstaller')
 $transcriptStarted = $false
+$appInstallerUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller'
+
+function Set-InstallerProgress {
+    param(
+        [Parameter(Mandatory = $true)][ValidateRange(0, 100)][int]$Percent,
+        [Parameter(Mandatory = $true)][string]$Status
+    )
+
+    $safeStatus = $Status -replace '[\r\n|]', ' '
+    if (![string]::IsNullOrWhiteSpace($ProgressFile)) {
+        try {
+            [System.IO.File]::WriteAllText(
+                $ProgressFile,
+                "$Percent|$safeStatus",
+                (New-Object System.Text.UTF8Encoding($false))
+            )
+        }
+        catch {
+            Write-Warning "Could not update the installer progress display: $($_.Exception.Message)"
+        }
+    }
+    Write-Host "INSTALL_PROGRESS|$Percent|$safeStatus"
+}
 
 try {
     Start-Transcript -Path $logPath -Append | Out-Null
     $transcriptStarted = $true
+
+    Set-InstallerProgress -Percent 2 -Status 'Checking Windows compatibility...'
 
     if (-not [Environment]::Is64BitOperatingSystem) {
         throw 'Pixel Overlay requires 64-bit Windows.'
@@ -30,6 +57,8 @@ try {
         throw "The included publisher certificate was not found: $CertificatePath"
     }
 
+    Set-InstallerProgress -Percent 8 -Status 'Validating the publisher certificate...'
+
     $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
         (Resolve-Path -LiteralPath $CertificatePath).Path
     )
@@ -40,8 +69,6 @@ try {
         throw 'The included signing certificate has expired.'
     }
 
-    # This is a raw X509Certificate2, not a Cert:\ provider object.
-    # Read the EKU extension directly instead of relying on EnhancedKeyUsageList.
     $ekuExtension = $certificate.Extensions |
         Where-Object { $_.Oid.Value -eq '2.5.29.37' } |
         Select-Object -First 1
@@ -66,10 +93,12 @@ try {
         Select-Object -First 1
 
     if ($TrustCertificateOnly) {
+        Set-InstallerProgress -Percent 70 -Status 'Registering the trusted publisher certificate...'
         if (!$trustedCertificate) {
             Import-Certificate -FilePath $CertificatePath -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
         }
         Write-Host "Trusted publisher certificate installed for this Windows device: $($certificate.Thumbprint)"
+        Set-InstallerProgress -Percent 100 -Status 'Publisher certificate is ready.'
         return
     }
 
@@ -77,10 +106,10 @@ try {
         throw 'The Pixel Overlay publisher certificate is not installed in Local Computer > Trusted People. Run the setup installer again and approve its administrator prompt.'
     }
 
-    $appInstallerUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller'
-    Write-Host "Downloading update manifest: $appInstallerUri"
+    Set-InstallerProgress -Percent 15 -Status 'Downloading the latest release manifest...'
     Invoke-WebRequest -Uri $appInstallerUri -OutFile $manifestPath -UseBasicParsing -MaximumRedirection 5
 
+    Set-InstallerProgress -Percent 28 -Status 'Verifying the release and package identity...'
     [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
     if ($manifest.DocumentElement.LocalName -ne 'AppInstaller') {
         throw 'The downloaded update manifest is not a valid App Installer document.'
@@ -98,16 +127,58 @@ try {
         throw 'The downloaded package identity does not match the trusted Pixel Overlay publisher certificate.'
     }
 
-    Write-Host "Installing Pixel Overlay version $($mainPackage.GetAttribute('Version'))..."
-    # The AppInstaller parameter set requires Path plus the AppInstallerFile switch.
-    # ForceApplicationShutdown belongs to a different parameter set.
-    Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
+    $availableVersion = [version]$mainPackage.GetAttribute('Version')
+    $installedPackage = Get-AppxPackage -Name 'PixelOverlay' -ErrorAction SilentlyContinue |
+        Sort-Object { [version]$_.Version } -Descending |
+        Select-Object -First 1
 
+    if ($installedPackage) {
+        $installedVersion = [version]$installedPackage.Version
+        if ($installedVersion -ge $availableVersion) {
+            if ($installedVersion -eq $availableVersion) {
+                $message = "Pixel Overlay $installedVersion is already the latest available version."
+            }
+            else {
+                $message = "Installed version $installedVersion is newer than channel version $availableVersion. No downgrade was performed."
+            }
+            Write-Host $message
+            Set-InstallerProgress -Percent 100 -Status $message
+            return
+        }
+        Write-Host "Updating Pixel Overlay from $installedVersion to $availableVersion. App data will be preserved."
+    }
+    else {
+        Write-Host "Installing Pixel Overlay version $availableVersion..."
+    }
+
+    Set-InstallerProgress -Percent 40 -Status 'Starting Windows App Installer...'
+
+    if (![string]::IsNullOrWhiteSpace($VolumePath) -and !$installedPackage) {
+        $volume = Get-AppxVolume | Where-Object {
+            $_.PackageStorePath -eq $VolumePath -and !$_.IsOffline
+        } | Select-Object -First 1
+
+        if (!$volume) {
+            throw "The selected Windows app package volume is no longer available: $VolumePath"
+        }
+
+        Write-Host "Selected Windows-managed package volume: $($volume.PackageStorePath)"
+        Add-AppxPackage -Path $manifestPath -AppInstallerFile -Volume $volume -ErrorAction Stop
+    }
+    else {
+        # Updates keep the existing Windows-managed package location.
+        Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
+    }
+
+    Set-InstallerProgress -Percent 90 -Status 'Verifying the installed package...'
     $installedPackage = Get-AppxPackage -Name 'PixelOverlay' |
         Sort-Object Version -Descending |
         Select-Object -First 1
     if (!$installedPackage) {
         throw 'Windows did not register the Pixel Overlay package after installation.'
+    }
+    if ([version]$installedPackage.Version -lt $availableVersion) {
+        throw "Windows registered version $($installedPackage.Version), but the expected version is $availableVersion."
     }
 
     $gameBar = Get-AppxPackage -Name 'Microsoft.XboxGamingOverlay' -ErrorAction SilentlyContinue
@@ -125,8 +196,10 @@ try {
 
     Write-Host "Pixel Overlay installed. Package version: $($installedPackage.Version)"
     Write-Host 'Updates are configured through the stable App Installer manifest.'
+    Set-InstallerProgress -Percent 100 -Status "Pixel Overlay $($installedPackage.Version) is ready."
 }
 catch {
+    Set-InstallerProgress -Percent 100 -Status 'Installation failed. Open the installer log for details.'
     Write-Error $_
     Write-Host "Installation log: $logPath" -ForegroundColor Yellow
     exit 1
