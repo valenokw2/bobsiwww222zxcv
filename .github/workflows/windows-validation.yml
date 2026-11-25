@@ -1,0 +1,218 @@
+name: Pixel Overlay Windows Validation
+
+on:
+  push:
+    branches:
+      - fix/stability-2026-11
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pixel-overlay-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: windows-2025
+    env:
+      PIXEL_OVERLAY_SIGNING_PFX_BASE64: ${{ secrets.PIXELOVERLAY_SIGNING_PFX_BASE64 }}
+      PIXEL_OVERLAY_SIGNING_PFX_PASSWORD: ${{ secrets.PIXELOVERLAY_SIGNING_PFX_PASSWORD }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Parse PowerShell scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $paths = @(
+            '.\installer\Install-PixelOverlay.ps1',
+            '.\Install.ps1',
+            '.\Build-Package.ps1',
+            '.\scripts\Build-AppInstaller.ps1'
+          )
+          foreach ($path in $paths) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $path).Path,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$path : $($_.Message) at $($_.Extent.StartLineNumber):$($_.Extent.StartColumnNumber)" }
+              throw "Windows PowerShell 5.1 parser rejected $path."
+            }
+            Write-Host "PowerShell 5.1 syntax OK: $path"
+          }
+
+      - name: Build signed MSIX and verify the single-file installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:PIXEL_OVERLAY_SIGNING_PFX_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:PIXEL_OVERLAY_SIGNING_PFX_PASSWORD)) {
+            throw 'The persistent signing certificate secrets are not configured.'
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Validation-Signing.pfx'
+          $packageOutput = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Validation-Packages'
+          $assetDirectory = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Validation-Assets'
+          try {
+            $pfxBytes = [Convert]::FromBase64String($env:PIXEL_OVERLAY_SIGNING_PFX_BASE64)
+            [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+            [Array]::Clear($pfxBytes, 0, $pfxBytes.Length)
+            $env:PIXEL_OVERLAY_SIGNING_PFX_PATH = $pfxPath
+
+            if (Test-Path $packageOutput) { Remove-Item $packageOutput -Recurse -Force }
+            if (Test-Path $assetDirectory) { Remove-Item $assetDirectory -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path $assetDirectory | Out-Null
+
+            & .\Build-Package.ps1 -Configuration Release -OutputDirectory $packageOutput
+            if ($LASTEXITCODE -ne 0) { throw "Build-Package.ps1 failed with exit code $LASTEXITCODE." }
+
+            $mainPackages = @(Get-ChildItem -Path $packageOutput -Recurse -File |
+              Where-Object { $_.Extension -in '.msix', '.appx' -and $_.FullName -notmatch '[\\/]Dependencies[\\/]' })
+            if ($mainPackages.Count -ne 1) {
+              throw "Expected exactly one main MSIX package outside Dependencies; found $($mainPackages.Count)."
+            }
+            $mainAsset = Join-Path $assetDirectory 'PixelOverlay-1.0.3.0-x64.msix'
+            Copy-Item -LiteralPath $mainPackages[0].FullName -Destination $mainAsset
+
+            $dependencyDirectories = @(Get-ChildItem -Path $packageOutput -Directory -Recurse |
+              Where-Object { $_.Name -eq 'Dependencies' })
+            $dependencyFiles = @(
+              foreach ($directory in $dependencyDirectories) {
+                foreach ($architecture in @('x64', 'neutral')) {
+                  $architectureDirectory = Join-Path $directory.FullName $architecture
+                  if (Test-Path -LiteralPath $architectureDirectory) {
+                    Get-ChildItem -Path $architectureDirectory -File |
+                      Where-Object { $_.Extension -in '.appx', '.msix' }
+                  }
+                }
+              }
+            )
+
+            $dependencyPaths = @()
+            $dependencyResourceNames = @()
+            $dependencyIndex = 0
+            foreach ($dependency in $dependencyFiles) {
+              $dependencyIndex++
+              $destinationName = $dependency.Name
+              $destination = Join-Path $assetDirectory $destinationName
+              if (Test-Path -LiteralPath $destination) {
+                $destinationName = '{0}.dependency{1}{2}' -f $dependency.BaseName, $dependencyIndex, $dependency.Extension
+                $destination = Join-Path $assetDirectory $destinationName
+              }
+              Copy-Item -LiteralPath $dependency.FullName -Destination $destination
+              $dependencyPaths += $destination
+              $dependencyResourceNames += ('PixelOverlayInstaller.Payload.Dependencies.{0:D3}-{1}' -f $dependencyIndex, $destinationName)
+            }
+            Write-Host "Found $($dependencyPaths.Count) x64/neutral framework package(s)."
+
+            $certificateSource = Join-Path $packageOutput 'PixelOverlay.cer'
+            if (!(Test-Path -LiteralPath $certificateSource)) {
+              $certificateSource = Get-ChildItem -Path $packageOutput -Recurse -Filter 'PixelOverlay.cer' -File |
+                Select-Object -First 1 -ExpandProperty FullName
+            }
+            if (!$certificateSource) { throw 'Build-Package.ps1 did not export PixelOverlay.cer.' }
+            $certificateAsset = Join-Path $assetDirectory 'PixelOverlay.cer'
+            Copy-Item -LiteralPath $certificateSource -Destination $certificateAsset -Force
+
+            $appInstallerPath = Join-Path $assetDirectory 'PixelOverlay.appinstaller'
+            $appInstallerArgs = @{
+              MainPackagePath = $mainAsset
+              DependencyPaths = $dependencyPaths
+              Version = '1.0.3.0'
+              ReleaseTag = 'validation'
+              RepositoryFullName = 'valenokw2/bobsiwww222zxcv'
+              ManifestUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/validation/PixelOverlay.appinstaller'
+              OutputPath = $appInstallerPath
+            }
+            & .\scripts\Build-AppInstaller.ps1 @appInstallerArgs
+            if ($LASTEXITCODE -ne 0) { throw 'Build-AppInstaller.ps1 failed.' }
+
+            $installerSource = Join-Path $env:GITHUB_WORKSPACE 'installer\PixelOverlayInstaller.cs'
+            $installerScript = Join-Path $env:GITHUB_WORKSPACE 'installer\Install-PixelOverlay.ps1'
+            $installerCode = Get-Content -LiteralPath $installerSource -Raw
+            $installerCode = $installerCode.Replace('__APP_VERSION__', '1.0.3.0')
+            $installerCode = $installerCode.Replace('__APP_INSTALLER_URI__', '')
+            $generatedSource = Join-Path $env:RUNNER_TEMP 'PixelOverlayInstaller.Validation.cs'
+            [IO.File]::WriteAllText($generatedSource, $installerCode, (New-Object System.Text.UTF8Encoding($false)))
+
+            $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+            if (!(Test-Path -LiteralPath $csc)) { throw 'The .NET Framework C# compiler was not found.' }
+            $setupPath = Join-Path $assetDirectory 'PixelOverlay-Setup-Validation.exe'
+            $resourceArguments = @(
+              "/resource:$mainAsset,PixelOverlayInstaller.Payload.PixelOverlay.msix",
+              "/resource:$certificateAsset,PixelOverlayInstaller.Payload.PixelOverlay.cer",
+              "/resource:$installerScript,PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1"
+            )
+            foreach ($resourceName in $dependencyResourceNames) {
+              $resourceSuffix = $resourceName.Substring('PixelOverlayInstaller.Payload.Dependencies.'.Length)
+              $separatorIndex = $resourceSuffix.IndexOf('-')
+              if ($separatorIndex -lt 1) { throw "Invalid dependency resource name: $resourceName" }
+              $fileName = $resourceSuffix.Substring($separatorIndex + 1)
+              $resourcePath = Join-Path $assetDirectory $fileName
+              $resourceArguments += "/resource:$resourcePath,$resourceName"
+            }
+            $compilerArguments = @(
+              '/nologo',
+              '/target:winexe',
+              '/platform:x64',
+              '/optimize+',
+              "/out:$setupPath",
+              '/reference:System.dll',
+              '/reference:System.Drawing.dll',
+              '/reference:System.Windows.Forms.dll'
+            ) + $resourceArguments + @($generatedSource)
+
+            & $csc @compilerArguments
+            if ($LASTEXITCODE -ne 0) { throw "C# installer compilation failed with exit code $LASTEXITCODE." }
+            if (!(Test-Path -LiteralPath $setupPath) -or (Get-Item -LiteralPath $setupPath).Length -lt 100000) {
+              throw 'The compiled setup EXE is missing or unexpectedly small.'
+            }
+
+            $signingCertificate = Get-ChildItem Cert:\CurrentUser\My |
+              Where-Object { $_.Thumbprint -eq 'A68A682C3193352F350F0FC6D7A5F8990863E150' } |
+              Select-Object -First 1
+            if (!$signingCertificate -or !$signingCertificate.HasPrivateKey) {
+              throw 'The persistent signing certificate with its private key was not imported.'
+            }
+            $signature = Set-AuthenticodeSignature -FilePath $setupPath -Certificate $signingCertificate -HashAlgorithm SHA256
+            if (!$signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $signingCertificate.Thumbprint) {
+              throw 'The validation setup EXE could not be Authenticode-signed.'
+            }
+
+            $assembly = [Reflection.Assembly]::LoadFile($setupPath)
+            $embeddedResources = @($assembly.GetManifestResourceNames())
+            $requiredResources = @(
+              'PixelOverlayInstaller.Payload.PixelOverlay.msix',
+              'PixelOverlayInstaller.Payload.PixelOverlay.cer',
+              'PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1'
+            )
+            $missingResources = @($requiredResources | Where-Object { $_ -notin $embeddedResources })
+            if ($missingResources.Count -gt 0) {
+              throw "The EXE is missing core resources: $($missingResources -join ', ')"
+            }
+            $prefix = 'PixelOverlayInstaller.Payload.Dependencies.'
+            $embeddedDependencies = @($embeddedResources | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) })
+            if ($embeddedDependencies.Count -ne $dependencyPaths.Count) {
+              throw "Expected $($dependencyPaths.Count) embedded dependency resource(s), found $($embeddedDependencies.Count)."
+            }
+
+            Write-Host 'Release MSIX build: PASS'
+            Write-Host 'App Installer manifest generation: PASS'
+            Write-Host 'Single-file EXE compilation and signature: PASS'
+            Write-Host "Embedded dependency resources: $($embeddedDependencies.Count)"
+            Get-FileHash -Path $setupPath -Algorithm SHA256 | Format-List
+          }
+          finally {
+            if (Test-Path -LiteralPath $pfxPath) { Remove-Item -LiteralPath $pfxPath -Force }
+          }
