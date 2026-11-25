@@ -308,7 +308,6 @@ var
   ResultCode: Integer;
   TrustParameters: String;
   InstallParameters: String;
-  ProgressFile: String;
   SelectedVolumePath: String;
   ProcessStarted: Boolean;
 begin
@@ -329,9 +328,6 @@ begin
 
   ExtractTemporaryFile('Install-PixelOverlay.ps1');
   ExtractTemporaryFile('PixelOverlay.cer');
-
-  ProgressFile := ExpandConstant('{tmp}\PixelOverlay-Install-Progress.txt');
-  DeleteFile(ProgressFile);
 
   ProgressPage := CreateOutputMarqueeProgressPage('Installing Pixel Overlay', 'Preparing the signed package and registering it with Windows...');
   ProgressPage.Show;
@@ -364,8 +360,7 @@ begin
     InstallParameters :=
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
       '-File "' + ExpandConstant('{tmp}\Install-PixelOverlay.ps1') + '" ' +
-      '-CertificatePath "' + ExpandConstant('{tmp}\PixelOverlay.cer') + '" ' +
-      '-ProgressFile "' + ProgressFile + '"';
+      '-CertificatePath "' + ExpandConstant('{tmp}\PixelOverlay.cer') + '"';
 
     if DetectedMode = 'Install' then
     begin
