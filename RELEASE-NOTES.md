@@ -26,11 +26,11 @@ A single-file Windows installer bundles the signed app package, all required x64
 - Proportional image fitting as the Game Bar widget is resized.
 
 ## Known limitations
-- Beta sideload build, not a Microsoft Store release.
+- Distributed as a sideload package, not through the Microsoft Store.
 - The package publisher certificate is self-signed; Windows may show a SmartScreen warning because the publisher is not backed by a public certificate authority.
 - Automatic update registration requires the stable App Installer channel to be reachable during setup. The bundled app can still be installed locally if the update channel is temporarily unavailable.
 - Settings preview displays the first GIF frame; animated playback is in the overlay.
 - Position offsets are in device-independent pixels, not normalized percentages of the widget size.
-- Runtime behavior inside the actual Game Bar host still requires hands-on validation on supported Windows systems.
+- Smoke-tested inside the actual Xbox Game Bar host. Behavior may still vary across Windows builds and hardware configurations.
 
 Report failures with the Windows build, exact reproduction steps, image format/dimensions, and a screenshot of the widget.
