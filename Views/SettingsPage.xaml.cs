@@ -36,12 +36,16 @@ namespace PixelOverlay.Views
         }
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
-            DataContext = SettingsStore.Current.State;
-            LibraryList.DataContext = SettingsStore.Current;
-            ProfileList.DataContext = SettingsStore.Current;
-            SettingsStore.Current.StateChanged += Store_StateChanged;
-            await RestoreSelectionAsync();
-            UpdateControls();
+            try
+            {
+                DataContext = SettingsStore.Current.State;
+                LibraryList.DataContext = SettingsStore.Current;
+                ProfileList.DataContext = SettingsStore.Current;
+                SettingsStore.Current.StateChanged += Store_StateChanged;
+                await RestoreSelectionAsync();
+                UpdateControls();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Settings page load", ex); }
         }
         private void OnUnloaded(object sender, RoutedEventArgs e)
         {
@@ -51,7 +55,15 @@ namespace PixelOverlay.Views
         }
         private async void Store_StateChanged(object sender, EventArgs e)
         {
-            await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () => { UpdatePreviewTransform(); UpdateControls(); });
+            try
+            {
+                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () =>
+                {
+                    try { UpdatePreviewTransform(); UpdateControls(); }
+                    catch (Exception ex) { AppDiagnostics.Log("Settings state UI update", ex); }
+                });
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Settings state dispatch", ex); }
         }
         private async Task RestoreSelectionAsync()
         {
@@ -149,8 +161,12 @@ namespace PixelOverlay.Views
         private async void RemoveImage_Click(object sender, RoutedEventArgs e)
         {
             if (!(((FrameworkElement)sender).Tag is ImageRecord item)) return;
-            await _images.DeleteAsync(item);
-            await RestoreSelectionAsync();
+            try
+            {
+                await _images.DeleteAsync(item);
+                await RestoreSelectionAsync();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Remove library image", ex); ShowError("Cannot remove this image: " + ex.Message); }
         }
         private void Center_Click(object sender, RoutedEventArgs e) => SettingsStore.Current.State.Center();
         private void Reset_Click(object sender, RoutedEventArgs e) => SettingsStore.Current.State.ResetTransform();
@@ -191,8 +207,12 @@ namespace PixelOverlay.Views
         private void Profile_SelectionChanged(object sender, SelectionChangedEventArgs e) { }
         private async void ShowError(string message)
         {
-            var dialog = new ContentDialog { Title = "Pixel Overlay", Content = message, CloseButtonText = "OK" };
-            await dialog.ShowAsync();
+            try
+            {
+                var dialog = new ContentDialog { Title = "Pixel Overlay", Content = message, CloseButtonText = "OK" };
+                await dialog.ShowAsync();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Show error dialog", ex); }
         }
     }
 }
