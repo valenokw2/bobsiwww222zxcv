@@ -35,6 +35,7 @@ namespace PixelOverlay.Services
         public ImageSource CurrentFrame => _bitmap;
         public event EventHandler FrameChanged;
         public bool IsReady => _decoder != null;
+        public event EventHandler PlaybackFailed;
 
         public GifPlayer() => _timer.Tick += async (s, e) => await AdvanceAsync();
 
@@ -70,9 +71,17 @@ namespace PixelOverlay.Services
         {
             if (_loading || _decoder == null || _disposed) return;
             _timer.Stop();
-            _frameIndex = (_frameIndex + 1) % (int)_decoder.FrameCount;
-            await RenderCurrentAsync();
-            if (!_disposed) UpdateSchedule();
+            try
+            {
+                _frameIndex = (_frameIndex + 1) % (int)_decoder.FrameCount;
+                await RenderCurrentAsync();
+                if (!_disposed) UpdateSchedule();
+            }
+            catch (Exception)
+            {
+                Stop();
+                PlaybackFailed?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         private async Task RenderCurrentAsync()
@@ -129,7 +138,7 @@ namespace PixelOverlay.Services
         private void ApplyPreviousDisposal()
         {
             if (_previousDisposal == 2) Clear(_previousLeft, _previousTop, _previousWidth, _previousHeight);
-            else if (_previousDisposal == 3 && _snapshot != null) Buffer.BlockCopy(_snapshot, 0, _canvas, 0, _canvas.Length);
+            else if (_previousDisposal == 3 && _snapshot != null) System.System.Buffer.BlockCopy(_snapshot, 0, _canvas, 0, _canvas.Length);
         }
 
         private void Clear(int left, int top, int width, int height)
@@ -175,7 +184,7 @@ namespace PixelOverlay.Services
             }
         }
 
-        private static async Task<int> TryReadAsync(BitmapProperties properties, string key)
+        private static async Task<int> TryReadAsync(BitmapPropertiesView properties, string key)
         {
             try
             {

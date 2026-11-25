@@ -6,7 +6,7 @@
     <Grid Background="{StaticResource PanelBrush}" Padding="16" RowSpacing="12">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="190"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <Grid ColumnSpacing="8"><StackPanel><TextBlock Text="PIXEL OVERLAY" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="Image-only Game Bar overlay" Opacity=".7" FontSize="12"/></StackPanel><Button Grid.Column="1" Content="Import image" Click="Import_Click" HorizontalAlignment="Right"/></Grid>
-        <Border Grid.Row="1" x:Name="PreviewSurface" Background="#12151C" CornerRadius="6" PointerPressed="Preview_PointerPressed" PointerMoved="Preview_PointerMoved" PointerReleased="Preview_PointerReleased">
+        <Border Grid.Row="1" x:Name="PreviewSurface" Background="#12151C" CornerRadius="6" SizeChanged="PreviewSurface_SizeChanged" PointerPressed="Preview_PointerPressed" PointerMoved="Preview_PointerMoved" PointerReleased="Preview_PointerReleased">
             <Grid>
                 <TextBlock x:Name="EmptyPreview" Text="PNG, JPG, JPEG or GIF&#10;Drop here or import an image" TextAlignment="Center" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity=".55"/>
                 <Image x:Name="PreviewImage"

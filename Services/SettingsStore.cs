@@ -109,7 +109,7 @@ namespace PixelOverlay.Services
                     }
                     if (json == _lastJson) continue;
                     var folder = ApplicationData.Current.LocalFolder;
-                    var temp = await folder.CreateFileAsync(StateFile + ".tmp", CreationCollisionOption.ReplaceExisting);
+                    var temp = await folder.CreateFileAsync(StateFile + "." + Guid.NewGuid().ToString("N") + ".tmp", CreationCollisionOption.ReplaceExisting);
                     await FileIO.WriteTextAsync(temp, json);
                     try
                     {

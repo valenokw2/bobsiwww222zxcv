@@ -21,6 +21,8 @@ namespace PixelOverlay.Views
         private bool _dragging;
         private Windows.Foundation.Point _dragStart;
         private double _originX, _originY;
+        private int _previewLoadGeneration;
+        private bool _restoringSelection;
 
         public SettingsPage()
         {
@@ -41,7 +43,12 @@ namespace PixelOverlay.Views
             await RestoreSelectionAsync();
             UpdateControls();
         }
-        private void OnUnloaded(object sender, RoutedEventArgs e) => SettingsStore.Current.StateChanged -= Store_StateChanged;
+        private void OnUnloaded(object sender, RoutedEventArgs e)
+        {
+            SettingsStore.Current.StateChanged -= Store_StateChanged;
+            _previewLoadGeneration++;
+            _dragging = false;
+        }
         private async void Store_StateChanged(object sender, EventArgs e)
         {
             await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () => { UpdatePreviewTransform(); UpdateControls(); });
@@ -49,30 +56,54 @@ namespace PixelOverlay.Views
         private async Task RestoreSelectionAsync()
         {
             _selected = _images.Selected();
-            LibraryList.SelectedItem = _selected;
+            _restoringSelection = true;
+            try { LibraryList.SelectedItem = _selected; }
+            finally { _restoringSelection = false; }
             await LoadPreviewAsync();
         }
         private async Task LoadPreviewAsync()
         {
+            var item = _selected;
+            var generation = ++_previewLoadGeneration;
+            PreviewImage.Source = null;
+            if (item == null)
+            {
+                EmptyPreview.Text = "PNG, JPG, JPEG or GIF\\nDrop here or import an image";
+                EmptyPreview.Visibility = Visibility.Visible;
+                UpdatePreviewTransform();
+                UpdateControls();
+                return;
+            }
+
             try
             {
-                PreviewImage.Source = await _images.LoadBitmapAsync(_selected);
-                EmptyPreview.Visibility = _selected == null ? Visibility.Visible : Visibility.Collapsed;
+                var bitmap = await _images.LoadBitmapAsync(item);
+                if (generation != _previewLoadGeneration || !ReferenceEquals(_selected, item)) return;
+                PreviewImage.Source = bitmap;
+                EmptyPreview.Visibility = Visibility.Collapsed;
             }
             catch (Exception)
             {
-                PreviewImage.Source = null; EmptyPreview.Text = "Image could not be opened"; EmptyPreview.Visibility = Visibility.Visible;
+                if (generation != _previewLoadGeneration || !ReferenceEquals(_selected, item)) return;
+                PreviewImage.Source = null;
+                EmptyPreview.Text = "Image could not be opened";
+                EmptyPreview.Visibility = Visibility.Visible;
             }
-            UpdatePreviewTransform(); UpdateControls();
+            UpdatePreviewTransform();
+            UpdateControls();
         }
         private void UpdatePreviewTransform()
         {
+            PreviewTransform.CenterX = PreviewSurface.ActualWidth / 2d;
+            PreviewTransform.CenterY = PreviewSurface.ActualHeight / 2d;
             var state = SettingsStore.Current.State;
             PreviewImage.Opacity = state.Opacity / 100d;
             PreviewTransform.ScaleX = PreviewTransform.ScaleY = state.Scale / 100d;
             PreviewTransform.TranslateX = state.PositionX; PreviewTransform.TranslateY = state.PositionY;
             PreviewTransform.Rotation = state.Rotation;
         }
+        private void PreviewSurface_SizeChanged(object sender, SizeChangedEventArgs e) => UpdatePreviewTransform();
+
         private void UpdateControls()
         {
             GifControls.Visibility = _selected?.IsGif == true ? Visibility.Visible : Visibility.Collapsed;
@@ -110,7 +141,7 @@ namespace PixelOverlay.Views
         }
         private async void Library_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (!(LibraryList.SelectedItem is ImageRecord item)) return;
+            if (_restoringSelection || !(LibraryList.SelectedItem is ImageRecord item)) return;
             _selected = item; SettingsStore.Current.State.SelectedImageId = item.Id; SettingsStore.Current.NotifyChanged();
             await LoadPreviewAsync();
         }

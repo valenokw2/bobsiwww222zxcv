@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       Background="#00000000">
     <!-- Named Transparent can paint black inside Game Bar. #00000000 stays clear. -->
-    <Grid x:Name="OverlaySurface" Background="#00000000">
+    <Grid x:Name="OverlaySurface" Background="#00000000" SizeChanged="OverlaySurface_SizeChanged">
         <Image x:Name="OverlayImage"
                HorizontalAlignment="Stretch"
                VerticalAlignment="Stretch"

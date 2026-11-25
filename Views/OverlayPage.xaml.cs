@@ -60,6 +60,7 @@ namespace PixelOverlay.Views
 
         private async Task RefreshAsync()
         {
+            UpdateTransformCenter();
             var state = SettingsStore.Current.State;
             OverlayImage.Opacity = state.Opacity / 100d;
             OverlayTransform.ScaleX = OverlayTransform.ScaleY = state.Scale / 100d;
@@ -117,6 +118,14 @@ namespace PixelOverlay.Views
                         if (generation == _imageLoadGeneration && ReferenceEquals(_gif, player))
                             OverlayImage.Source = player.CurrentFrame;
                     };
+                    player.PlaybackFailed += (s, e) =>
+                    {
+                        if (generation == _imageLoadGeneration && ReferenceEquals(_gif, player))
+                        {
+                            Hint.Text = "GIF playback stopped because a frame could not be decoded";
+                            Hint.Visibility = Visibility.Visible;
+                        }
+                    };
                     await player.OpenAsync(file);
                     if (!IsCurrentLoad(generation, item.Id))
                     {
@@ -152,6 +161,14 @@ namespace PixelOverlay.Views
                 if (generation == _imageLoadGeneration && _loadingId == item.Id)
                     _loadingId = null;
             }
+        }
+
+        private void OverlaySurface_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateTransformCenter();
+
+        private void UpdateTransformCenter()
+        {
+            OverlayTransform.CenterX = OverlaySurface.ActualWidth / 2d;
+            OverlayTransform.CenterY = OverlaySurface.ActualHeight / 2d;
         }
 
         private bool IsCurrentLoad(int generation, string imageId)
