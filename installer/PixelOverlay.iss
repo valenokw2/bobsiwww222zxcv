@@ -140,10 +140,29 @@ begin
     (DefaultVolumePath <> '');
 end;
 
+function ReadPreflightError(const FileName: String): String;
+var
+  Lines: TArrayOfString;
+  I: Integer;
+begin
+  Result := '';
+  if not LoadStringsFromFile(FileName, Lines) then
+    Exit;
+
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    if Result <> '' then
+      Result := Result + #13#10;
+    Result := Result + Lines[I];
+  end;
+end;
+
 procedure RunPreflight;
 var
   DetectScript: String;
   OutputPath: String;
+  ErrorPath: String;
+  ErrorDetails: String;
   Parameters: String;
   ResultCode: Integer;
 begin
@@ -158,7 +177,9 @@ begin
 
   DetectScript := ExpandConstant('{tmp}\Detect-PixelOverlay.ps1');
   OutputPath := ExpandConstant('{tmp}\PixelOverlay-Preflight.txt');
+  ErrorPath := ExpandConstant('{tmp}\PixelOverlay-Preflight-Error.txt');
   DeleteFile(OutputPath);
+  DeleteFile(ErrorPath);
   ExtractTemporaryFile('Detect-PixelOverlay.ps1');
 
   PreflightProgressPage := CreateOutputProgressPage('Checking your PC', 'Checking the installed version and Windows app package location...');
@@ -169,12 +190,22 @@ begin
       PreflightProgressPage.SetProgress(0, 2);
       Parameters :=
         '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
-        '-File "' + DetectScript + '" -OutputPath "' + OutputPath + '"';
+        '-File "' + DetectScript + '" -OutputPath "' + OutputPath + '" ' +
+        '-ErrorPath "' + ErrorPath + '"';
 
       if not RunPowerShell(Parameters, True, ewWaitUntilTerminated, ResultCode) then
         RaiseException('Windows PowerShell could not be started to inspect this PC.');
       if ResultCode <> 0 then
-        RaiseException('Could not check the current Pixel Overlay version. Confirm that you are online and try again.');
+      begin
+        ErrorDetails := ReadPreflightError(ErrorPath);
+        if ErrorDetails <> '' then
+          RaiseException('The version check failed:' + #13#10 + ErrorDetails +
+            #13#10#13#10 + 'Diagnostic log: ' +
+            ExpandConstant('{localappdata}\PixelOverlay\Preflight.log'))
+        else
+          RaiseException('Could not check the current Pixel Overlay version. Check your internet connection and see:' +
+            #13#10 + ExpandConstant('{localappdata}\PixelOverlay\Preflight.log'));
+      end;
 
       PreflightProgressPage.SetText('Reading the installed package and Windows storage settings...', '');
       PreflightProgressPage.SetProgress(1, 2);
