@@ -137,9 +137,35 @@ jobs:
 
             $installerSource = Join-Path $env:GITHUB_WORKSPACE 'installer\PixelOverlayInstaller.cs'
             $installerScript = Join-Path $env:GITHUB_WORKSPACE 'installer\Install-PixelOverlay.ps1'
+            $payloadEntries = @(
+              [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.PixelOverlay.msix'; Path = $mainAsset },
+              [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.PixelOverlay.cer'; Path = $certificateAsset },
+              [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1'; Path = $installerScript }
+            )
+            for ($index = 0; $index -lt $dependencyPaths.Count; $index++) {
+              $payloadEntries += [pscustomobject]@{
+                ResourceName = $dependencyResourceNames[$index]
+                Path = $dependencyPaths[$index]
+              }
+            }
+            $payloadHashLines = @(
+              foreach ($entry in $payloadEntries) {
+                if (!(Test-Path -LiteralPath $entry.Path)) { throw "Cannot hash missing installer payload: $($entry.Path)" }
+                $hash = (Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash
+                '                "' + $entry.ResourceName + '", "' + $hash + '"'
+              }
+            )
+            if ($payloadHashLines.Count -ne $payloadEntries.Count -or $payloadHashLines.Count -lt 3) {
+              throw 'Could not generate the complete embedded payload SHA-256 table.'
+            }
+
             $installerCode = Get-Content -LiteralPath $installerSource -Raw
             $installerCode = $installerCode.Replace('__APP_VERSION__', '1.0.3.0')
             $installerCode = $installerCode.Replace('__APP_INSTALLER_URI__', '')
+            $installerCode = $installerCode.Replace('__PAYLOAD_SHA256_ENTRIES__', ($payloadHashLines -join ', '))
+            if ($installerCode.Contains('__PAYLOAD_SHA256_ENTRIES__')) {
+              throw 'The installer payload SHA-256 table placeholder was not replaced.'
+            }
             $generatedSource = Join-Path $env:RUNNER_TEMP 'PixelOverlayInstaller.Validation.cs'
             [IO.File]::WriteAllText($generatedSource, $installerCode, (New-Object System.Text.UTF8Encoding($false)))
 
