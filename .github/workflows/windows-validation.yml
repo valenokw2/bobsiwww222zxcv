@@ -1,9 +1,6 @@
 name: Pixel Overlay Windows Validation
 
 on:
-  push:
-    branches:
-      - fix/stability-2026-11
   pull_request:
     branches:
       - main
@@ -12,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pixel-overlay-validation-${{ github.head_ref || github.ref }}
+  group: pixel-overlay-validation-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
