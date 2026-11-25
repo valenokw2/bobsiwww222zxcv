@@ -117,7 +117,8 @@ namespace PixelOverlay.Services
                 if (!IsCurrent(generation)) return;
                 Stop();
                 AppDiagnostics.Log("GIF playback", ex);
-                PlaybackFailed?.Invoke(this, EventArgs.Empty);
+                try { PlaybackFailed?.Invoke(this, EventArgs.Empty); }
+                catch (Exception handlerException) { AppDiagnostics.Log("GIF playback failure handler", handlerException); }
             }
         }
 
