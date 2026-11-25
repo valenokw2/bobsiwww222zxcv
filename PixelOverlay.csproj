@@ -26,13 +26,13 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <OutputPath>bin\x64\Release\</OutputPath><DefineConstants>TRACE;NETFX_CORE;WINDOWS_UWP</DefineConstants>
-    <Optimize>true</Optimize><DebugType>pdbonly</DebugType><PlatformTarget>x64</PlatformTarget>
+    <Optimize>true</Optimize><DebugType>pdbonly</DebugType><PlatformTarget>x64</PlatformTarget><UseDotNetNativeToolchain>true</UseDotNetNativeToolchain>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="App.xaml.cs" /><Compile Include="Models\*.cs" /><Compile Include="Services\*.cs" /><Compile Include="Views\*.xaml.cs" /><Compile Include="Properties\*.cs" />
     <ApplicationDefinition Include="App.xaml" /><Page Include="Views\*.xaml" />
     <AppxManifest Include="Package.appxmanifest" />
-    <Content Include="Assets\**\*" /><Content Include="PixelOverlay\**\*" />
+    <Content Include="Assets\**\*" /><Content Include="PixelOverlay\**\*" /><Content Include="Properties\Default.rd.xml" />
   </ItemGroup>
   <PropertyGroup>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>

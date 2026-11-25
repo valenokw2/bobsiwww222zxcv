@@ -13,7 +13,7 @@ if ([string]::IsNullOrWhiteSpace($SigningPfxPath) -or !(Test-Path -LiteralPath $
     throw 'A persistent signing PFX is required. Run scripts/Initialize-SigningCertificate.ps1 once and configure the repository Actions secrets.'
 }
 if ([string]::IsNullOrWhiteSpace($SigningPfxPassword)) {
-    throw 'PIXELOVERLAY_SIGNING_PFX_PASSWORD is empty.'
+    throw 'PIXEL_OVERLAY_SIGNING_PFX_PASSWORD is empty.'
 }
 
 $programFilesX86 = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)
@@ -38,6 +38,10 @@ if (!$cert) {
 }
 
 $thumbprint = $cert.Thumbprint
+$expectedThumbprint = 'A68A682C3193352F350F0FC6D7A5F8990863E150'
+if ($thumbprint -ne $expectedThumbprint) {
+    throw "The signing certificate thumbprint '$thumbprint' does not match the expected Pixel Overlay certificate '$expectedThumbprint'."
+}
 if ($cert.Subject -ne 'CN=PixelOverlayDeveloper') {
     throw "Unexpected signing certificate subject '$($cert.Subject)'. Expected CN=PixelOverlayDeveloper."
 }

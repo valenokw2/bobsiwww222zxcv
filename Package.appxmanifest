@@ -4,7 +4,7 @@
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
          xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
          IgnorableNamespaces="uap uap3 mp">
-  <Identity Name="PixelOverlay" Publisher="CN=PixelOverlayDeveloper" Version="1.0.2.0" />
+  <Identity Name="PixelOverlay" Publisher="CN=PixelOverlayDeveloper" Version="1.0.3.0" />
   <mp:PhoneIdentity PhoneProductId="8AC4CB70-4D8A-4E24-81AE-7B9E4DD78B6A" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
   <Properties><DisplayName>Pixel Overlay</DisplayName><PublisherDisplayName>Pixel Overlay</PublisherDisplayName><Logo>Assets\StoreLogo.png</Logo></Properties>
   <Dependencies><TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" /></Dependencies>

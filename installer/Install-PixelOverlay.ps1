@@ -10,8 +10,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$TargetVersion,
 
-    [Parameter(Mandatory = $true)]
-    [string]$AppInstallerUri,
+    [string]$AppInstallerUri = '',
 
     [switch]$ForceApplicationShutdown
 )
@@ -25,10 +24,21 @@ $logDirectory = Join-Path $env:LOCALAPPDATA 'PixelOverlay\Installer'
 $null = New-Item -ItemType Directory -Force -Path $logDirectory
 $logPath = Join-Path $logDirectory 'Setup.log'
 
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
 function Send-SetupProgress {
     param([int]$Percent, [string]$Message)
     $safe = $Message -replace '[\r\n|]', ' '
     Write-Output "PIXEL_SETUP_PROGRESS|$Percent|$safe"
+}
+
+function Write-SetupLog {
+    param([string]$Message)
+    try {
+        $line = "[{0}] {1}{2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message, [Environment]::NewLine
+        [System.IO.File]::AppendAllText($logPath, $line, [System.Text.Encoding]::UTF8)
+    }
+    catch {}
 }
 
 function Get-InstalledPixelOverlay {
@@ -37,7 +47,7 @@ function Get-InstalledPixelOverlay {
         Select-Object -First 1
 }
 
-function Get-AppxFileIdentity {
+function Get-AppxManifestXml {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $Path).Path)
@@ -52,64 +62,150 @@ function Get-AppxFileIdentity {
             $reader = New-Object System.IO.StreamReader($stream)
             try {
                 [xml]$manifest = $reader.ReadToEnd()
+                return ,$manifest
             }
-            finally {
-                $reader.Dispose()
-            }
+            finally { $reader.Dispose() }
         }
-        finally {
-            $stream.Dispose()
+        finally { $stream.Dispose() }
+    }
+    finally { $archive.Dispose() }
+}
+
+function Normalize-AppxArchitecture {
+    param([string]$Architecture)
+
+    if ($null -eq $Architecture) { $Architecture = '' }
+    switch ($Architecture.ToString().Trim().ToLowerInvariant()) {
+        'amd64' { return 'x64' }
+        'x64' { return 'x64' }
+        'x86' { return 'x86' }
+        'arm' { return 'arm' }
+        'arm64' { return 'arm64' }
+        'neutral' { return 'neutral' }
+        default { return '' }
+    }
+}
+
+function Test-AppxArchitectureCompatible {
+    param(
+        [string]$ActualArchitecture,
+        [string]$RequiredArchitecture
+    )
+
+    $actual = Normalize-AppxArchitecture $ActualArchitecture
+    $required = Normalize-AppxArchitecture $RequiredArchitecture
+    if (!$required) { $required = 'x64' }
+    if ($required -eq 'neutral') { return $actual -eq 'neutral' }
+    return ($actual -eq $required -or $actual -eq 'neutral')
+}
+
+function Get-AppxFileIdentity {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $manifest = Get-AppxManifestXml -Path $Path
+    $identity = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Identity']")
+    if (!$identity) {
+        throw "Package '$Path' does not contain Package/Identity."
+    }
+
+    return [pscustomobject]@{
+        Path = (Resolve-Path -LiteralPath $Path).Path
+        Name = $identity.GetAttribute('Name')
+        Publisher = $identity.GetAttribute('Publisher')
+        Version = [version]$identity.GetAttribute('Version')
+        Architecture = Normalize-AppxArchitecture $identity.GetAttribute('ProcessorArchitecture')
+    }
+}
+
+function Get-RequiredPackageDependencies {
+    param([Parameter(Mandatory = $true)][string]$MainPackagePath)
+
+    $mainIdentity = Get-AppxFileIdentity -Path $MainPackagePath
+    $manifest = Get-AppxManifestXml -Path $MainPackagePath
+    $nodes = $manifest.SelectNodes("/*[local-name()='Package']/*[local-name()='Dependencies']/*[local-name()='PackageDependency']")
+    $required = @()
+
+    foreach ($node in $nodes) {
+        $name = $node.GetAttribute('Name')
+        $publisher = $node.GetAttribute('Publisher')
+        if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($publisher)) {
+            throw 'The application manifest contains a package dependency without Name or Publisher.'
         }
 
-        $identity = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Identity']")
-        if (!$identity) {
-            throw "Package '$Path' does not contain Package/Identity."
-        }
+        $minimumVersionText = $node.GetAttribute('MinVersion')
+        if ([string]::IsNullOrWhiteSpace($minimumVersionText)) { $minimumVersionText = '0.0.0.0' }
+        $architecture = Normalize-AppxArchitecture $node.GetAttribute('ProcessorArchitecture')
+        if (!$architecture) { $architecture = $mainIdentity.Architecture }
 
-        return [pscustomobject]@{
-            Name = $identity.GetAttribute('Name')
-            Publisher = $identity.GetAttribute('Publisher')
-            Version = [version]$identity.GetAttribute('Version')
-            Architecture = $identity.GetAttribute('ProcessorArchitecture')
+        $required += [pscustomobject]@{
+            Name = $name
+            Publisher = $publisher
+            MinVersion = [version]$minimumVersionText
+            Architecture = $architecture
         }
     }
-    finally {
-        $archive.Dispose()
-    }
+
+    return $required
 }
 
 function Get-DependenciesToInstall {
-    param([Parameter(Mandatory = $true)][string[]]$DependencyPaths)
+    param(
+        [Parameter(Mandatory = $true)][string]$MainPackagePath,
+        [Parameter(Mandatory = $true)][string]$PayloadDirectory
+    )
 
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $requiredDependencies = @(Get-RequiredPackageDependencies -MainPackagePath $MainPackagePath)
+    if ($requiredDependencies.Count -eq 0) {
+        Write-SetupLog 'The main package manifest declares no framework package dependencies.'
+        return @()
+    }
+
+    $candidateFiles = @(Get-ChildItem -LiteralPath $PayloadDirectory -File |
+        Where-Object { $_.Extension -in @('.appx', '.msix') -and $_.Name -ne 'PixelOverlay.msix' })
+    $candidates = @(
+        foreach ($candidateFile in $candidateFiles) {
+            try { Get-AppxFileIdentity -Path $candidateFile.FullName }
+            catch { Write-SetupLog ("Ignoring invalid embedded dependency '{0}': {1}" -f $candidateFile.Name, $_.Exception.Message) }
+        }
+    )
+
     $needed = @()
+    foreach ($dependency in $requiredDependencies) {
+        $installed = @(Get-AppxPackage -Name $dependency.Name -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Publisher -eq $dependency.Publisher -and
+                (Test-AppxArchitectureCompatible -ActualArchitecture ([string]$_.Architecture) -RequiredArchitecture $dependency.Architecture)
+            } |
+            Sort-Object { [version]$_.Version } -Descending)
 
-    foreach ($path in $DependencyPaths) {
-        $identity = Get-AppxFileIdentity -Path $path
-        $installed = Get-AppxPackage -Name $identity.Name -ErrorAction SilentlyContinue |
-            Where-Object { $_.Publisher -eq $identity.Publisher } |
-            Sort-Object { [version]$_.Version } -Descending |
+        $satisfied = $installed | Where-Object { [version]$_.Version -ge $dependency.MinVersion } | Select-Object -First 1
+        if ($satisfied) {
+            Write-SetupLog ("Dependency already satisfied: {0} {1} ({2})" -f
+                $dependency.Name, $satisfied.Version, $dependency.Architecture)
+            continue
+        }
+
+        $candidate = $candidates |
+            Where-Object {
+                $_.Name -eq $dependency.Name -and
+                $_.Publisher -eq $dependency.Publisher -and
+                (Test-AppxArchitectureCompatible -ActualArchitecture $_.Architecture -RequiredArchitecture $dependency.Architecture) -and
+                $_.Version -ge $dependency.MinVersion
+            } |
+            Sort-Object Version -Descending |
             Select-Object -First 1
 
-        if ($installed -and ([version]$installed.Version -ge $identity.Version)) {
-            Write-SetupLog ("Skipping already-installed dependency: {0} {1}" -f $identity.Name, $installed.Version)
+        if (!$candidate) {
+            throw ("Required dependency '{0}' ({1}, {2}, version >= {3}) is not installed and no matching embedded package was found." -f
+                $dependency.Name, $dependency.Publisher, $dependency.Architecture, $dependency.MinVersion)
         }
-        else {
-            Write-SetupLog ("Dependency will be installed: {0} {1}" -f $identity.Name, $identity.Version)
-            $needed += $path
-        }
+
+        Write-SetupLog ("Dependency will be deployed: {0} {1} ({2})" -f
+            $candidate.Name, $candidate.Version, $candidate.Architecture)
+        $needed += $candidate.Path
     }
 
-    return $needed
-}
-
-function Write-SetupLog {
-    param([string]$Message)
-    try {
-        $line = "[{0}] {1}{2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message, [Environment]::NewLine
-        [System.IO.File]::AppendAllText($logPath, $line, [System.Text.Encoding]::UTF8)
-    }
-    catch {}
+    return @($needed | Select-Object -Unique)
 }
 
 try {
@@ -129,18 +225,10 @@ try {
         $installedVersion = if ($installed) { [string]$installed.Version } else { '' }
         $target = [version]$TargetVersion
 
-        if (!$installed) {
-            $mode = 'Install'
-        }
-        elseif ([version]$installedVersion -lt $target) {
-            $mode = 'Update'
-        }
-        elseif ([version]$installedVersion -eq $target) {
-            $mode = 'Current'
-        }
-        else {
-            $mode = 'Newer'
-        }
+        if (!$installed) { $mode = 'Install' }
+        elseif ([version]$installedVersion -lt $target) { $mode = 'Update' }
+        elseif ([version]$installedVersion -eq $target) { $mode = 'Current' }
+        else { $mode = 'Newer' }
 
         Write-Output "PIXEL_SETUP_STATE|$mode|$installedVersion|$TargetVersion|$build"
         Write-SetupLog "Detection complete. Mode=$mode; installed=$installedVersion; target=$TargetVersion; build=$build."
@@ -152,20 +240,6 @@ try {
     $certificatePath = Join-Path $PayloadDirectory 'PixelOverlay.cer'
     if (!(Test-Path -LiteralPath $mainPackage)) { throw 'The embedded Pixel Overlay MSIX package is missing.' }
     if (!(Test-Path -LiteralPath $certificatePath)) { throw 'The embedded publisher certificate is missing.' }
-
-    $dependencyPaths = @(
-        (Join-Path $PayloadDirectory 'Microsoft.NET.CoreFramework.Debug.2.2.appx'),
-        (Join-Path $PayloadDirectory 'Microsoft.NET.CoreRuntime.2.2.appx'),
-        (Join-Path $PayloadDirectory 'Microsoft.VCLibs.x64.14.00.appx')
-    )
-    foreach ($dependency in $dependencyPaths) {
-        if (!(Test-Path -LiteralPath $dependency)) {
-            throw "A required framework dependency is missing: $(Split-Path -Leaf $dependency)"
-        }
-    }
-    $dependenciesToInstall = @(Get-DependenciesToInstall -DependencyPaths $dependencyPaths)
-    Write-SetupLog ("Dependencies supplied by setup: {0}; already satisfied: {1}" -f
-        $dependenciesToInstall.Count, ($dependencyPaths.Count - $dependenciesToInstall.Count))
 
     Send-SetupProgress 12 'Verifying the publisher certificate...'
     $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
@@ -187,42 +261,45 @@ try {
 
     $target = [version]$TargetVersion
     $installed = Get-InstalledPixelOverlay
-    if ($installed -and [version]$installed.Version -ge $target) {
-        $message = "Pixel Overlay $($installed.Version) is already installed. No downgrade or reinstall was performed."
-        Write-SetupLog $message
-        Send-SetupProgress 100 $message
-        Write-Output "PIXEL_SETUP_SUCCESS|$message"
-        exit 0
-    }
+    $packageAlreadyPresent = $installed -and ([version]$installed.Version -ge $target)
 
-    Send-SetupProgress 25 'Installing the signed application and required framework dependencies...'
-    $deploymentArguments = @{
-        Path = $mainPackage
-        ErrorAction = 'Stop'
-    }
-    if ($dependenciesToInstall.Count -gt 0) {
-        $deploymentArguments.DependencyPath = $dependenciesToInstall
-    }
-    if ($ForceApplicationShutdown) {
-        Write-SetupLog 'Retrying deployment with -ForceApplicationShutdown after explicit user approval.'
-        $deploymentArguments.ForceApplicationShutdown = $true
+    if ($packageAlreadyPresent) {
+        Write-SetupLog ("Package deployment skipped; installed version {0} is already >= target {1}." -f $installed.Version, $target)
+        Send-SetupProgress 30 'The application package is already installed; checking its update channel...'
     }
     else {
-        Write-SetupLog 'Installing the app without re-deploying dependencies already present for this user.'
-    }
+        $dependenciesToInstall = @(Get-DependenciesToInstall -MainPackagePath $mainPackage -PayloadDirectory $PayloadDirectory)
+        Write-SetupLog ("Framework dependencies to deploy: {0}." -f $dependenciesToInstall.Count)
 
-    try {
-        Add-AppxPackage @deploymentArguments
-    }
-    catch {
-        $deploymentMessage = [string]$_.Exception.Message
-        if (!$ForceApplicationShutdown -and $deploymentMessage -match '(?i)0x80073D02') {
-            Write-SetupLog 'Windows reported ERROR_PACKAGES_IN_USE (0x80073D02). Waiting for user confirmation before force-closing dependent apps.'
-            $safeDeploymentMessage = $deploymentMessage -replace '[\r\n|]+', ' '
-            Write-Output "PIXEL_SETUP_PACKAGES_IN_USE|$safeDeploymentMessage"
-            exit 23
+        Send-SetupProgress 25 'Installing the signed application and required framework dependencies...'
+        $deploymentArguments = @{
+            Path = $mainPackage
+            ErrorAction = 'Stop'
         }
-        throw
+        if ($dependenciesToInstall.Count -gt 0) {
+            $deploymentArguments.DependencyPath = $dependenciesToInstall
+        }
+        if ($ForceApplicationShutdown) {
+            Write-SetupLog 'Retrying deployment with -ForceApplicationShutdown after explicit user approval.'
+            $deploymentArguments.ForceApplicationShutdown = $true
+        }
+        else {
+            Write-SetupLog 'Starting package deployment without forced application shutdown.'
+        }
+
+        try {
+            Add-AppxPackage @deploymentArguments
+        }
+        catch {
+            $deploymentMessage = [string]$_.Exception.Message
+            if (!$ForceApplicationShutdown -and $deploymentMessage -match '(?i)0x80073D02') {
+                Write-SetupLog 'Windows reported ERROR_PACKAGES_IN_USE (0x80073D02). Waiting for user confirmation before force-closing dependent apps.'
+                $safeDeploymentMessage = $deploymentMessage -replace '[\r\n|]+', ' '
+                Write-Output "PIXEL_SETUP_PACKAGES_IN_USE|$safeDeploymentMessage"
+                exit 23
+            }
+            throw
+        }
     }
 
     Send-SetupProgress 78 'Verifying the installed application...'
@@ -235,42 +312,45 @@ try {
     }
 
     $updateWarning = ''
-    Send-SetupProgress 88 'Connecting the automatic update channel...'
-    $manifestPath = Join-Path $env:TEMP ("PixelOverlay-Update-" + [guid]::NewGuid().ToString('N') + '.appinstaller')
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $AppInstallerUri -OutFile $manifestPath -UseBasicParsing -MaximumRedirection 10 -TimeoutSec 30 -Headers @{ 'User-Agent' = 'PixelOverlay-Setup' }
-
-        [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
-        if (!$manifest.DocumentElement -or $manifest.DocumentElement.LocalName -ne 'AppInstaller') {
-            throw 'The downloaded update manifest is invalid.'
-        }
-        if ($manifest.DocumentElement.GetAttribute('Uri') -ne $AppInstallerUri) {
-            throw 'The update manifest does not match the official Pixel Overlay update channel.'
-        }
-        $remoteMain = $manifest.SelectSingleNode("/*[local-name()='AppInstaller']/*[local-name()='MainPackage']")
-        if (!$remoteMain -or $remoteMain.GetAttribute('Name') -ne 'PixelOverlay' -or
-            $remoteMain.GetAttribute('Publisher') -ne 'CN=PixelOverlayDeveloper') {
-            throw 'The update manifest package identity is not Pixel Overlay.'
-        }
-
-        # Register the remote App Installer source after the offline payload has
-        # installed the same package locally. Windows sees the current version
-        # and only records the update source unless a newer release is available.
-        Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
-        Write-SetupLog 'The stable App Installer update source was registered successfully.'
+    if ([string]::IsNullOrWhiteSpace($AppInstallerUri)) {
+        Write-SetupLog 'Automatic update channel registration was skipped for this prerelease build.'
     }
-    catch {
-        $updateWarning = 'The app was installed, but automatic update registration could not be completed. Open the official App Installer link once while online to enable updates. Details: ' + $_.Exception.Message
-        Write-SetupLog ("Update registration warning: " + $_.Exception.Message)
-    }
-    finally {
-        if (Test-Path -LiteralPath $manifestPath) {
-            Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
+    else {
+        Send-SetupProgress 88 'Connecting the automatic update channel...'
+        $manifestPath = Join-Path $env:TEMP ("PixelOverlay-Update-" + [guid]::NewGuid().ToString('N') + '.appinstaller')
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $AppInstallerUri -OutFile $manifestPath -UseBasicParsing -MaximumRedirection 10 -TimeoutSec 30 -Headers @{ 'User-Agent' = 'PixelOverlay-Setup' }
+
+            [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
+            if (!$manifest.DocumentElement -or $manifest.DocumentElement.LocalName -ne 'AppInstaller') {
+                throw 'The downloaded update manifest is invalid.'
+            }
+            if ($manifest.DocumentElement.GetAttribute('Uri') -ne $AppInstallerUri) {
+                throw 'The update manifest does not match the configured Pixel Overlay update channel.'
+            }
+            $remoteMain = $manifest.SelectSingleNode("/*[local-name()='AppInstaller']/*[local-name()='MainPackage']")
+            if (!$remoteMain -or $remoteMain.GetAttribute('Name') -ne 'PixelOverlay' -or
+                $remoteMain.GetAttribute('Publisher') -ne 'CN=PixelOverlayDeveloper') {
+                throw 'The update manifest package identity is not Pixel Overlay.'
+            }
+
+            # A stable installer registers only the stable feed. Beta installers are built
+            # with an empty URI and can never redirect installed users to a prerelease.
+            Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
+            Write-SetupLog 'The configured App Installer update source was registered successfully.'
+        }
+        catch {
+            $updateWarning = 'The app was installed, but automatic update registration could not be completed. Details: ' + $_.Exception.Message
+            Write-SetupLog ("Update registration warning: " + $_.Exception.Message)
+        }
+        finally {
+            if (Test-Path -LiteralPath $manifestPath) {
+                Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
-    # App Installer may have applied a newer feed version during update registration.
     $installed = Get-InstalledPixelOverlay
     if (!$installed) {
         throw 'Pixel Overlay could not be found after update-channel registration.'
