@@ -199,9 +199,6 @@ begin
     except
       PreflightFailed := True;
       PreflightError := GetExceptionMessage;
-      except
-      PreflightFailed := True;
-      PreflightError := GetExceptionMessage;
     end;
   finally
     PreflightProgressPage.Hide;
@@ -330,7 +327,7 @@ begin
   ProcessId := 0;
 
   if not ExecAsOriginalUser(
-    ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe'),
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     Parameters, '', SW_HIDE, ewNoWait, ProcessId) then
   begin
     ExitCode := ProcessId;
@@ -451,7 +448,7 @@ begin
 
     Log('Installing or updating Pixel Overlay for the original signed-in Windows user.');
     ProgressPage.SetText('Windows is downloading and registering the signed MSIX package. This stage can take a few minutes...', '');
-    ProcessStarted := RunInstallProcess(InstallParameters, ResultCode);
+    ProcessStarted := RunInstallProcess(InstallParameters, ProgressFile, ResultCode);
     if (not ProcessStarted) or (ResultCode <> 0) then
     begin
       Result := 'Pixel Overlay could not be installed (exit code ' + IntToStr(ResultCode) + ').' +
