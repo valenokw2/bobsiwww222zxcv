@@ -100,7 +100,7 @@ function Get-DependenciesToInstall {
         }
     }
 
-    return ,$needed
+    return $needed
 }
 
 function Write-SetupLog {
