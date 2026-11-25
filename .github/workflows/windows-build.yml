@@ -240,7 +240,10 @@ jobs:
             "/resource:$installerScript,PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1"
           )
           foreach ($resourceName in $dependencyResourceNames) {
-            $fileName = $resourceName.Substring('PixelOverlayInstaller.Payload.Dependencies.'.Length + 4)
+            $resourceSuffix = $resourceName.Substring('PixelOverlayInstaller.Payload.Dependencies.'.Length)
+            $separatorIndex = $resourceSuffix.IndexOf('-')
+            if ($separatorIndex -lt 1) { throw "Invalid dependency resource name: $resourceName" }
+            $fileName = $resourceSuffix.Substring($separatorIndex + 1)
             $resourcePath = Join-Path $assetDirectory $fileName
             $resourceArguments += "/resource:$resourcePath,$resourceName"
           }

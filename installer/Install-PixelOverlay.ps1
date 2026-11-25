@@ -62,7 +62,7 @@ function Get-AppxManifestXml {
             $reader = New-Object System.IO.StreamReader($stream)
             try {
                 [xml]$manifest = $reader.ReadToEnd()
-                return $manifest
+                return ,$manifest
             }
             finally { $reader.Dispose() }
         }
