@@ -145,8 +145,9 @@ try {
         $installedLocation = [string]$installedPackage.InstallLocation
         foreach ($candidateVolume in @(Get-AppxVolume | Where-Object { !$_.IsOffline })) {
             $candidatePath = [string]$candidateVolume.PackageStorePath
+            $normalizedCandidatePath = $candidatePath.TrimEnd([char]92) + [char]92
             if (![string]::IsNullOrWhiteSpace($candidatePath) -and
-                $installedLocation.StartsWith($candidatePath.TrimEnd('\\') + '\\', [StringComparison]::OrdinalIgnoreCase)) {
+                $installedLocation.StartsWith($normalizedCandidatePath, [StringComparison]::OrdinalIgnoreCase)) {
                 $installedVolume = $candidateVolume
                 break
             }
