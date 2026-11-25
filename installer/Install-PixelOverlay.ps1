@@ -11,11 +11,16 @@ param(
     [string]$TargetVersion,
 
     [Parameter(Mandatory = $true)]
-    [string]$AppInstallerUri
+    [string]$AppInstallerUri,
+
+    [switch]$ForceApplicationShutdown
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$Utf8Encoding = New-Object System.Text.UTF8Encoding($false)
+try { [Console]::OutputEncoding = $Utf8Encoding } catch {}
+$OutputEncoding = $Utf8Encoding
 $logDirectory = Join-Path $env:LOCALAPPDATA 'PixelOverlay\Installer'
 $null = New-Item -ItemType Directory -Force -Path $logDirectory
 $logPath = Join-Path $logDirectory 'Setup.log'
@@ -122,8 +127,25 @@ try {
     }
 
     Send-SetupProgress 25 'Installing the signed application and bundled framework dependencies...'
-    Write-SetupLog 'Calling Add-AppxPackage with embedded MSIX and dependency packages.'
-    Add-AppxPackage -Path $mainPackage -DependencyPath $dependencyPaths -ErrorAction Stop
+    if ($ForceApplicationShutdown) {
+        Write-SetupLog 'Retrying deployment with -ForceApplicationShutdown after explicit user approval.'
+        Add-AppxPackage -Path $mainPackage -DependencyPath $dependencyPaths -ForceApplicationShutdown -ErrorAction Stop
+    }
+    else {
+        Write-SetupLog 'Calling Add-AppxPackage with embedded MSIX and dependency packages.'
+        try {
+            Add-AppxPackage -Path $mainPackage -DependencyPath $dependencyPaths -ErrorAction Stop
+        }
+        catch {
+            $deploymentMessage = [string]$_.Exception.Message
+            if ($deploymentMessage -match '(?i)0x80073D02') {
+                Write-SetupLog 'Windows reported ERROR_PACKAGES_IN_USE (0x80073D02). Waiting for user confirmation before force-closing dependent apps.'
+                Write-Output "PIXEL_SETUP_PACKAGES_IN_USE|$deploymentMessage"
+                exit 23
+            }
+            throw
+        }
+    }
 
     Send-SetupProgress 78 'Verifying the installed application...'
     $installed = Get-InstalledPixelOverlay
