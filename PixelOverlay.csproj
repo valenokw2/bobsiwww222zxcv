@@ -32,7 +32,7 @@
     <Compile Include="App.xaml.cs" /><Compile Include="Models\*.cs" /><Compile Include="Services\*.cs" /><Compile Include="Views\*.xaml.cs" /><Compile Include="Properties\*.cs" />
     <ApplicationDefinition Include="App.xaml" /><Page Include="Views\*.xaml" />
     <AppxManifest Include="Package.appxmanifest" />
-    <Content Include="Assets\**\*" /><Content Include="PixelOverlay\**\*" />
+    <Content Include="Assets\**\*" /><Content Include="PixelOverlay\**\*" /><Content Include="Properties\Default.rd.xml" />
   </ItemGroup>
   <PropertyGroup>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>

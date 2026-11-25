@@ -80,7 +80,6 @@ namespace PixelOverlayInstaller
         private bool closingAllowed;
         private string detectedMode;
         private string installedVersion;
-        private string warningMessage;
 
         internal SetupForm()
         {
