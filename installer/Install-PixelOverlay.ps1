@@ -218,7 +218,8 @@ try {
         $deploymentMessage = [string]$_.Exception.Message
         if (!$ForceApplicationShutdown -and $deploymentMessage -match '(?i)0x80073D02') {
             Write-SetupLog 'Windows reported ERROR_PACKAGES_IN_USE (0x80073D02). Waiting for user confirmation before force-closing dependent apps.'
-            Write-Output "PIXEL_SETUP_PACKAGES_IN_USE|$deploymentMessage"
+            $safeDeploymentMessage = $deploymentMessage -replace '[\\r\\n|]+', ' '
+            Write-Output "PIXEL_SETUP_PACKAGES_IN_USE|$safeDeploymentMessage"
             exit 23
         }
         throw
@@ -291,6 +292,7 @@ try {
 catch {
     $message = $_.Exception.Message
     Write-SetupLog ("FAILED: " + $message)
-    Write-Output "PIXEL_SETUP_FAILURE|$message"
+    $safeMessage = $message -replace '[\\r\\n|]+', ' '
+    Write-Output "PIXEL_SETUP_FAILURE|$safeMessage"
     exit 1
 }
