@@ -20,11 +20,27 @@ $ProgressPreference = 'SilentlyContinue'
 $Utf8Encoding = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $Utf8Encoding } catch {}
 $OutputEncoding = $Utf8Encoding
+$ExpectedCertificateSha256 = '65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F'
 $logDirectory = Join-Path $env:LOCALAPPDATA 'PixelOverlay\Installer'
 $null = New-Item -ItemType Directory -Force -Path $logDirectory
 $logPath = Join-Path $logDirectory 'Setup.log'
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+function ConvertFrom-SafeXmlText {
+    param([Parameter(Mandatory = $true)][string]$XmlText)
+
+    $settings = New-Object System.Xml.XmlReaderSettings
+    $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver = $null
+    $settings.MaxCharactersInDocument = 2097152
+    $document = New-Object System.Xml.XmlDocument
+    $document.XmlResolver = $null
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($XmlText), $settings)
+    try { $document.Load($reader) }
+    finally { $reader.Dispose() }
+    return ,$document
+}
 
 function Send-SetupProgress {
     param([int]$Percent, [string]$Message)
@@ -61,7 +77,8 @@ function Get-AppxManifestXml {
         try {
             $reader = New-Object System.IO.StreamReader($stream)
             try {
-                [xml]$manifest = $reader.ReadToEnd()
+                $manifestText = $reader.ReadToEnd()
+                $manifest = ConvertFrom-SafeXmlText -XmlText $manifestText
                 return ,$manifest
             }
             finally { $reader.Dispose() }
@@ -248,8 +265,9 @@ try {
     if ($certificate.Subject -ne 'CN=PixelOverlayDeveloper') {
         throw "Unexpected package publisher certificate: $($certificate.Subject)"
     }
-    if ($certificate.Thumbprint -ne 'A68A682C3193352F350F0FC6D7A5F8990863E150') {
-        throw 'The embedded publisher certificate thumbprint does not match the expected Pixel Overlay signing certificate.'
+    $actualCertificateSha256 = (Get-FileHash -LiteralPath $certificatePath -Algorithm SHA256).Hash
+    if ($actualCertificateSha256 -ne $ExpectedCertificateSha256) {
+        throw 'The embedded publisher certificate SHA-256 does not match the pinned Pixel Overlay signing certificate.'
     }
 
     $trusted = Get-ChildItem 'Cert:\LocalMachine\TrustedPeople' |
@@ -260,6 +278,15 @@ try {
     }
 
     $target = [version]$TargetVersion
+    $mainIdentity = Get-AppxFileIdentity -Path $mainPackage
+    if ($mainIdentity.Name -ne 'PixelOverlay' -or
+        $mainIdentity.Publisher -ne 'CN=PixelOverlayDeveloper' -or
+        $mainIdentity.Architecture -ne 'x64' -or
+        $mainIdentity.Version -ne $target) {
+        throw ("Unexpected embedded MSIX identity/version. Expected PixelOverlay / CN=PixelOverlayDeveloper / x64 / {0}; received {1} / {2} / {3} / {4}." -f
+            $target, $mainIdentity.Name, $mainIdentity.Publisher, $mainIdentity.Architecture, $mainIdentity.Version)
+    }
+
     $installed = Get-InstalledPixelOverlay
     $packageAlreadyPresent = $installed -and ([version]$installed.Version -ge $target)
 
@@ -317,12 +344,12 @@ try {
     }
     else {
         Send-SetupProgress 88 'Connecting the automatic update channel...'
-        $manifestPath = Join-Path $env:TEMP ("PixelOverlay-Update-" + [guid]::NewGuid().ToString('N') + '.appinstaller')
+        $manifestPath = Join-Path $PayloadDirectory ("PixelOverlay-Update-" + [guid]::NewGuid().ToString('N') + '.appinstaller')
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri $AppInstallerUri -OutFile $manifestPath -UseBasicParsing -MaximumRedirection 10 -TimeoutSec 30 -Headers @{ 'User-Agent' = 'PixelOverlay-Setup' }
 
-            [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
+            $manifest = ConvertFrom-SafeXmlText -XmlText (Get-Content -LiteralPath $manifestPath -Raw)
             if (!$manifest.DocumentElement -or $manifest.DocumentElement.LocalName -ne 'AppInstaller') {
                 throw 'The downloaded update manifest is invalid.'
             }
@@ -331,8 +358,20 @@ try {
             }
             $remoteMain = $manifest.SelectSingleNode("/*[local-name()='AppInstaller']/*[local-name()='MainPackage']")
             if (!$remoteMain -or $remoteMain.GetAttribute('Name') -ne 'PixelOverlay' -or
-                $remoteMain.GetAttribute('Publisher') -ne 'CN=PixelOverlayDeveloper') {
-                throw 'The update manifest package identity is not Pixel Overlay.'
+                $remoteMain.GetAttribute('Publisher') -ne 'CN=PixelOverlayDeveloper' -or
+                $remoteMain.GetAttribute('ProcessorArchitecture') -ne 'x64') {
+                throw 'The update manifest package identity or architecture is not Pixel Overlay x64.'
+            }
+            $remoteVersion = [version]$remoteMain.GetAttribute('Version')
+            $manifestVersion = [version]$manifest.DocumentElement.GetAttribute('Version')
+            if ($remoteVersion -lt $target -or $manifestVersion -ne $remoteVersion) {
+                throw 'The update manifest version is older than the installed target or internally inconsistent.'
+            }
+            $remotePackageUri = [Uri]$remoteMain.GetAttribute('Uri')
+            $expectedPackagePath = "/valenokw2/bobsiwww222zxcv/releases/download/v$remoteVersion/PixelOverlay-$remoteVersion-x64.msix"
+            if (!$remotePackageUri.IsAbsoluteUri -or $remotePackageUri.Scheme -ne 'https' -or
+                $remotePackageUri.Host -ne 'github.com' -or $remotePackageUri.AbsolutePath -ne $expectedPackagePath) {
+                throw 'The update manifest package URL is outside the official versioned Pixel Overlay release path.'
             }
 
             # A stable installer registers only the stable feed. Beta installers are built
