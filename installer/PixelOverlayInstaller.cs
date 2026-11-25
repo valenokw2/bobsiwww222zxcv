@@ -567,7 +567,7 @@ namespace PixelOverlayInstaller
 
         private static string QuoteArgument(string value)
         {
-            return "\"" + (value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+            return "\"" + (value ?? "").Replace("\"", "\\\"") + "\"";
         }
 
         private void SetupFormClosing(object sender, FormClosingEventArgs e)
