@@ -15,6 +15,7 @@ namespace PixelOverlay.Services
     // One decoded frame and one composited canvas. Frames are not retained between cycles.
     public sealed class GifPlayer : IDisposable
     {
+        private const long MaxCanvasPixels = 8L * 1024L * 1024L;
         private readonly DispatcherTimer _timer = new DispatcherTimer();
         private BitmapDecoder _decoder;
         private IRandomAccessStream _stream;
@@ -32,6 +33,7 @@ namespace PixelOverlay.Services
         private int _previousHeight;
         private bool _loading;
         private bool _disposed;
+        private int _generation;
 
         public ImageSource CurrentFrame => _bitmap;
         public event EventHandler FrameChanged;
@@ -42,21 +44,52 @@ namespace PixelOverlay.Services
 
         public async Task OpenAsync(StorageFile file)
         {
+            var generation = ++_generation;
             Stop();
             DisposeDecoder();
             _disposed = false;
-            _stream = await file.OpenAsync(FileAccessMode.Read);
-            _decoder = await BitmapDecoder.CreateAsync(_stream);
-            if (_decoder.FrameCount == 0) throw new InvalidDataException("The GIF has no frames.");
-            _width = (int)_decoder.PixelWidth;
-            _height = (int)_decoder.PixelHeight;
-            if (_width <= 0 || _height <= 0 || _width > 8192 || _height > 8192)
-                throw new InvalidDataException("GIF dimensions must be between 1 and 8192 pixels.");
-            _canvas = new byte[(long)_width * _height * 4];
-            _frameIndex = 0;
-            _previousDisposal = 0;
-            await RenderCurrentAsync();
-            UpdateSchedule();
+            IRandomAccessStream openedStream = null;
+            try
+            {
+                openedStream = await file.OpenAsync(FileAccessMode.Read);
+                if (!IsCurrent(generation)) { openedStream.Dispose(); return; }
+
+                var decoder = await BitmapDecoder.CreateAsync(openedStream);
+                if (!IsCurrent(generation)) { openedStream.Dispose(); return; }
+                if (decoder.FrameCount == 0) throw new InvalidDataException("The GIF has no frames.");
+
+                var width = (int)decoder.PixelWidth;
+                var height = (int)decoder.PixelHeight;
+                if (width <= 0 || height <= 0 || width > 8192 || height > 8192)
+                    throw new InvalidDataException("GIF dimensions must be between 1 and 8192 pixels.");
+
+                var pixelCount = (long)width * height;
+                if (pixelCount > MaxCanvasPixels)
+                    throw new InvalidDataException("GIFs larger than 8 megapixels are not supported.");
+
+                _stream = openedStream;
+                openedStream = null;
+                _decoder = decoder;
+                _width = width;
+                _height = height;
+                _canvas = new byte[checked((int)(pixelCount * 4L))];
+                _frameIndex = 0;
+                _previousDisposal = 0;
+
+                await RenderCurrentAsync(generation);
+                if (IsCurrent(generation)) UpdateSchedule();
+            }
+            catch
+            {
+                openedStream?.Dispose();
+                if (generation == _generation)
+                {
+                    Stop();
+                    DisposeDecoder();
+                    _disposed = true;
+                }
+                throw;
+            }
         }
 
         public void UpdateSchedule()
@@ -70,29 +103,35 @@ namespace PixelOverlay.Services
 
         private async Task AdvanceAsync()
         {
-            if (_loading || _decoder == null || _disposed) return;
+            var generation = _generation;
+            if (_loading || _decoder == null || !IsCurrent(generation)) return;
             _timer.Stop();
             try
             {
                 _frameIndex = (_frameIndex + 1) % (int)_decoder.FrameCount;
-                await RenderCurrentAsync();
-                if (!_disposed) UpdateSchedule();
+                await RenderCurrentAsync(generation);
+                if (IsCurrent(generation)) UpdateSchedule();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                if (!IsCurrent(generation)) return;
                 Stop();
+                AppDiagnostics.Log("GIF playback", ex);
                 PlaybackFailed?.Invoke(this, EventArgs.Empty);
             }
         }
 
-        private async Task RenderCurrentAsync()
+        private async Task RenderCurrentAsync(int generation)
         {
-            if (_decoder == null || _disposed) return;
+            var decoder = _decoder;
+            if (decoder == null || !IsCurrent(generation)) return;
             _loading = true;
             try
             {
                 ApplyPreviousDisposal();
-                var frame = await _decoder.GetFrameAsync((uint)_frameIndex);
+                var frame = await decoder.GetFrameAsync((uint)_frameIndex);
+                if (!IsCurrent(generation) || !ReferenceEquals(decoder, _decoder) || _canvas == null) return;
+
                 var properties = frame.BitmapProperties;
                 int left = await TryReadAsync(properties, "/imgdesc/Left");
                 int top = await TryReadAsync(properties, "/imgdesc/Top");
@@ -101,6 +140,7 @@ namespace PixelOverlay.Services
                 int frameWidth = (int)frame.PixelWidth;
                 int frameHeight = (int)frame.PixelHeight;
 
+                if (!IsCurrent(generation) || _canvas == null) return;
                 // Disposal 3 restores the canvas from before this frame was drawn.
                 if (disposal == 3) _snapshot = (byte[])_canvas.Clone();
 
@@ -110,6 +150,8 @@ namespace PixelOverlay.Services
                     new BitmapTransform(),
                     ExifOrientationMode.IgnoreExifOrientation,
                     ColorManagementMode.DoNotColorManage);
+                if (!IsCurrent(generation) || _canvas == null) return;
+
                 Blit(pixels.DetachPixelData(), frameWidth, frameHeight, left, top);
                 PublishCanvas();
 
@@ -158,7 +200,7 @@ namespace PixelOverlay.Services
         private void Blit(byte[] source, int frameWidth, int frameHeight, int left, int top)
         {
             if (source == null || frameWidth <= 0 || frameHeight <= 0) return;
-            if (source.Length < frameWidth * frameHeight * 4) return;
+            if ((long)source.Length < (long)frameWidth * frameHeight * 4L) return;
             for (int y = 0; y < frameHeight; y++)
             {
                 int destinationY = top + y;
@@ -210,8 +252,14 @@ namespace PixelOverlay.Services
         {
             if (_disposed) return;
             _disposed = true;
+            _generation++;
             Stop();
             DisposeDecoder();
+        }
+
+        private bool IsCurrent(int generation)
+        {
+            return !_disposed && generation == _generation;
         }
 
         private void DisposeDecoder()
