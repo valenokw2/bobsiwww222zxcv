@@ -99,9 +99,9 @@ try {
     }
 
     Write-Host "Installing Pixel Overlay version $($mainPackage.GetAttribute('Version'))..."
-    # -ForceApplicationShutdown belongs to the MSIX Path parameter set and cannot
-    # be combined with -AppInstallerFile. App Installer manages its own update flow.
-    Add-AppxPackage -AppInstallerFile $manifestPath -ErrorAction Stop
+    # The AppInstaller parameter set requires Path plus the AppInstallerFile switch.
+    # ForceApplicationShutdown belongs to a different parameter set.
+    Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
 
     $installedPackage = Get-AppxPackage -Name 'PixelOverlay' |
         Sort-Object Version -Descending |
