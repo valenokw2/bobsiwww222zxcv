@@ -97,7 +97,13 @@ try {
     }
 
     Set-InstallerProgress -Percent 15 -Status 'Downloading the latest release manifest...'
-    Invoke-WebRequest -Uri $appInstallerUri -OutFile $manifestPath -UseBasicParsing -MaximumRedirection 5
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    }
+    catch {
+        Write-Warning ("Could not explicitly enable TLS 1.2: " + $_.Exception.Message)
+    }
+    Invoke-WebRequest -Uri $appInstallerUri -OutFile $manifestPath -UseBasicParsing -MaximumRedirection 10 -TimeoutSec 30 -Headers @{ 'User-Agent' = 'PixelOverlay-Setup' }
 
     Set-InstallerProgress -Percent 28 -Status 'Verifying the release and package identity...'
     [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
