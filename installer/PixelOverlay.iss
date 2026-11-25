@@ -38,7 +38,8 @@ Source: "..\ReleaseAssets\PixelOverlay.cer"; Flags: dontcopy
 var
   StatusPage: TOutputMsgWizardPage;
   VolumePage: TInputOptionWizardPage;
-  ProgressPage: TOutputProgressWizardPage;
+  PreflightProgressPage: TOutputProgressWizardPage;
+  ProgressPage: TOutputMarqueeProgressWizardPage;
   VolumePaths: TStringList;
   VolumeNames: TStringList;
   DefaultVolumeIndex: Integer;
@@ -151,11 +152,11 @@ begin
   DeleteFile(OutputPath);
   ExtractTemporaryFile('Detect-PixelOverlay.ps1');
 
-  ProgressPage := CreateOutputProgressPage('Checking your PC', 'Checking the installed version and Windows app package volumes...');
-  ProgressPage.Show;
+  PreflightProgressPage := CreateOutputProgressPage('Checking your PC', 'Checking the installed version and Windows app package volumes...');
+  PreflightProgressPage.Show;
   try
-    ProgressPage.SetText('Connecting to the official Pixel Overlay update channel...', '');
-    ProgressPage.SetProgress(0, 2);
+    PreflightProgressPage.SetText('Connecting to the official Pixel Overlay update channel...', '');
+    PreflightProgressPage.SetProgress(0, 2);
     Parameters :=
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
       '-File "' + DetectScript + '" -OutputPath "' + OutputPath + '"';
@@ -165,8 +166,8 @@ begin
     if ResultCode <> 0 then
       RaiseException('Could not check the current Pixel Overlay version. Confirm that you are online and try again.');
 
-    ProgressPage.SetText('Reading the installed package and available install volumes...', '');
-    ProgressPage.SetProgress(1, 2);
+    PreflightProgressPage.SetText('Reading the installed package and available install volumes...', '');
+    PreflightProgressPage.SetProgress(1, 2);
 
     if not ReadPreflightFile(OutputPath) then
       RaiseException('The installer could not read the version and package-volume information.');
@@ -177,13 +178,13 @@ begin
             (DetectedMode = 'Current') or (DetectedMode = 'Newer')) then
       RaiseException('The update channel returned an unsupported installation state.');
 
-    ProgressPage.SetProgress(2, 2);
-    ProgressPage.SetText('System check complete.', '');
+    PreflightProgressPage.SetProgress(2, 2);
+    PreflightProgressPage.SetText('System check complete.', '');
   except
     PreflightFailed := True;
     PreflightError := GetExceptionMessage;
   finally
-    ProgressPage.Hide;
+    PreflightProgressPage.Hide;
   end;
 end;
 
@@ -330,11 +331,11 @@ begin
   ProgressFile := ExpandConstant('{tmp}\PixelOverlay-Install-Progress.txt');
   DeleteFile(ProgressFile);
 
-  ProgressPage := CreateOutputProgressPage('Installing Pixel Overlay', 'Preparing the signed package and registering it with Windows...');
+  ProgressPage := CreateOutputMarqueeProgressPage('Installing Pixel Overlay', 'Preparing the signed package and registering it with Windows...');
   ProgressPage.Show;
+  ProgressPage.Animate;
   try
     ProgressPage.SetText('Installing the trusted publisher certificate...', '');
-    ProgressPage.SetProgress(10, 100);
 
     TrustParameters :=
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
@@ -357,7 +358,6 @@ begin
     end;
 
     ProgressPage.SetText('Windows is preparing the per-user package installation...', '');
-    ProgressPage.SetProgress(25, 100);
 
     InstallParameters :=
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
@@ -373,7 +373,6 @@ begin
 
     Log('Installing or updating Pixel Overlay for the original signed-in Windows user.');
     ProgressPage.SetText('Windows is downloading and registering the signed MSIX package. This stage can take a few minutes...', '');
-    ProgressPage.SetProgress(45, 100);
     ProcessStarted := RunInstallProcess(InstallParameters, ResultCode);
     if not ProcessStarted then
     begin
@@ -384,7 +383,6 @@ begin
     end;
 
     ProgressPage.SetText('Installation completed successfully.', '');
-    ProgressPage.SetProgress(100, 100);
     Log('Pixel Overlay installation completed successfully.');
   finally
     ProgressPage.Hide;
