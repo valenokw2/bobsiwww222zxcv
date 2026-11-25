@@ -190,42 +190,6 @@ jobs:
             if (Test-Path $pfxPath) { Remove-Item $pfxPath -Force }
           }
 
-      - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          $programFilesX86 = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)
-          $searchPaths = @(
-            (Join-Path $programFilesX86 'Inno Setup 6'),
-            (Join-Path $env:ProgramFiles 'Inno Setup 6')
-          )
-          $existing = Get-ChildItem -Path $searchPaths -Filter 'ISCC.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (!$existing) {
-            choco install innosetup --yes --no-progress
-            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
-          }
-
-      - name: Build single-file Windows installer
-        shell: pwsh
-        env:
-          PIXEL_OVERLAY_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          $programFilesX86 = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)
-          $searchPaths = @(
-            (Join-Path $programFilesX86 'Inno Setup 6'),
-            (Join-Path $env:ProgramFiles 'Inno Setup 6')
-          )
-          $iscc = Get-ChildItem -Path $searchPaths -Filter 'ISCC.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (!$iscc) { throw 'ISCC.exe was not found after installing Inno Setup.' }
-          & $iscc.FullName ".\installer\PixelOverlay.iss" "/O$env:RELEASE_ASSET_DIRECTORY"
-          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compiler failed with exit code $LASTEXITCODE." }
-
-          $setup = Join-Path $env:RELEASE_ASSET_DIRECTORY 'PixelOverlay-Setup.exe'
-          if (!(Test-Path $setup) -or (Get-Item $setup).Length -lt 100000) {
-            throw 'PixelOverlay-Setup.exe was not created or is unexpectedly small.'
-          }
-          Write-Host "Created installer: $setup"
-          Get-FileHash -Path $setup -Algorithm SHA256 | Format-List
-
       - name: Publish GitHub release assets
         shell: pwsh
         env:
@@ -234,7 +198,6 @@ jobs:
           RELEASE_PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
           $assets = @(
-            (Join-Path $env:RELEASE_ASSET_DIRECTORY 'PixelOverlay-Setup.exe'),
             $env:RELEASE_MAIN_PACKAGE,
             $env:RELEASE_APPINSTALLER,
             $env:RELEASE_CERTIFICATE
@@ -273,6 +236,14 @@ jobs:
             & gh @releaseArgs
           }
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation or update failed.' }
+
+          # Remove the obsolete bootstrapper from releases created by earlier builds.
+          $existingAssetNames = @(& gh release view $env:RELEASE_TAG --json assets --jq '.assets[].name' 2>$null)
+          if ($LASTEXITCODE -eq 0 -and $existingAssetNames -contains 'PixelOverlay-Setup.exe') {
+            & gh release delete-asset $env:RELEASE_TAG 'PixelOverlay-Setup.exe' --yes
+            if ($LASTEXITCODE -ne 0) { throw 'Could not remove the obsolete PixelOverlay-Setup.exe release asset.' }
+            Write-Host 'Removed obsolete release asset: PixelOverlay-Setup.exe'
+          }
 
       - name: Publish the stable App Installer manifest
         shell: pwsh
