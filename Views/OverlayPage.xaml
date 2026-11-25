@@ -4,7 +4,11 @@
       Background="#00000000">
     <!-- Named Transparent can paint black inside Game Bar. #00000000 stays clear. -->
     <Grid x:Name="OverlaySurface" Background="#00000000">
-        <Image x:Name="OverlayImage" HorizontalAlignment="Center" VerticalAlignment="Center" Stretch="None" IsHitTestVisible="False">
+        <Image x:Name="OverlayImage"
+               HorizontalAlignment="Stretch"
+               VerticalAlignment="Stretch"
+               Stretch="Uniform"
+               IsHitTestVisible="False">
             <Image.RenderTransform>
                 <CompositeTransform x:Name="OverlayTransform" />
             </Image.RenderTransform>
