@@ -1,14 +1,17 @@
 # Pixel Overlay v__VERSION__
 
-This release is installed and updated through Windows App Installer. No separate setup executable is required.
+A single-file Windows installer bundles the signed app package, all required x64 framework dependencies, the publisher certificate and the deployment logic. Windows App Installer remains the update provider after setup.
 
 ## Installation and updates
-- Open the stable [PixelOverlay.appinstaller](https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller) link to install or update Pixel Overlay.
-- Windows App Installer downloads and registers the signed MSIX package and its required x64 framework dependencies.
-- A stable .appinstaller update URI is registered for on-launch and Windows background update checks.
-- The public publisher certificate (PixelOverlay.cer) is included for first-time certificate trust when Windows requires it.
+- Download and run `PixelOverlay-Setup.exe`; no separate MSIX, APPX dependency or certificate downloads are required.
+- The setup imports the embedded public publisher certificate into Local Computer > Trusted People after one administrator approval.
+- The app itself is installed for the currently signed-in Windows user.
+- The setup installs the embedded signed MSIX and its bundled x64 framework dependencies from local files.
+- The stable App Installer update source is registered after installation when the update channel is reachable.
+- Windows continues to check for updates on launch and through its background update task.
+- The versioned release also retains the package assets used by the App Installer update channel. They are implementation assets and do not need to be downloaded manually.
 - Windows manages the protected MSIX package location and the configured default app package volume.
-- The package is signed using a persistent Code Signing certificate managed through GitHub Actions Secrets; the private key is not stored in the repository.
+- The installer and app package are signed with the persistent Pixel Overlay Code Signing certificate; the private key is not stored in the repository.
 
 ## Application functionality
 - Import PNG, JPG, JPEG and GIF images through the settings widget.
@@ -20,7 +23,8 @@ This release is installed and updated through Windows App Installer. No separate
 
 ## Known limitations
 - Beta sideload build, not a Microsoft Store release.
-- The package publisher certificate is self-signed; Windows may require a one-time certificate trust step.
+- The package publisher certificate is self-signed; Windows may show a SmartScreen warning because the publisher is not backed by a public certificate authority.
+- Automatic update registration requires the stable App Installer channel to be reachable during setup. The bundled app can still be installed locally if the update channel is temporarily unavailable.
 - Settings preview displays the first GIF frame; animated playback is in the overlay.
 - Position offsets are in device-independent pixels, not normalized percentages of the widget size.
 - Runtime behavior inside the actual Game Bar host still requires hands-on validation on supported Windows systems.
