@@ -145,6 +145,9 @@ if ($dependencyNodes.Count -gt 0) {
         $selectedCandidate = $matchingCandidates | Select-Object -First 1
         if ($selectedCandidate) {
             $installed = Get-InstalledDependency -Name $name -Publisher $publisher -Architecture $selectedCandidate.Architecture
+            if (!$installed -and $selectedCandidate.Architecture -ieq 'x64') {
+                $installed = Get-InstalledDependency -Name $name -Publisher $publisher -Architecture 'neutral'
+            }
             if (!$installed -or ([version]$installed.Version -lt $selectedCandidate.Version)) {
                 $resolvedDependencies += $selectedCandidate.Path
             }
@@ -157,7 +160,7 @@ if ($dependencyNodes.Count -gt 0) {
         $installedX64 = Get-InstalledDependency -Name $name -Publisher $publisher -Architecture 'x64'
         $installedNeutral = Get-InstalledDependency -Name $name -Publisher $publisher -Architecture 'neutral'
         $installed = @($installedX64, $installedNeutral) |
-            Where-Object { $_ -and [version]$_.Version -ge $minimumVersion } |
+            Where-Object { $_ -and ([version]$_.Version -ge $minimumVersion) } |
             Sort-Object { [version]$_.Version } -Descending |
             Select-Object -First 1
 
