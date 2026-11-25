@@ -373,8 +373,8 @@ begin
     ProcessStarted := RunInstallProcess(InstallParameters, ResultCode);
     if (not ProcessStarted) or (ResultCode <> 0) then
     begin
-      Result := 'Pixel Overlay could not be installed (exit code ' + IntToStr(ResultCode) + ').' +
-        #13#10#13#10 + 'The detailed log is available at:' + #13#10 +
+      Result := 'Pixel Overlay could not be installed (exit code ' + IntToStr(ResultCode) + ').' + #13#10 +
+        'The detailed log is available at:' + #13#10 +
         ExpandConstant('{localappdata}\PixelOverlay\Installer.log');
       Exit;
     end;
