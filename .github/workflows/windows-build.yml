@@ -33,12 +33,12 @@ jobs:
   release:
     runs-on: windows-2025
     env:
-      GH_TOKEN: ${ secrets.GITHUB_TOKEN }}
-      PIXEL_OVERLAY_SIGNING_PFX_BASE64: ${ secrets.PIXELOVERLAY_SIGNING_PFX_BASE64 }}
-      PIXEL_OVERLAY_SIGNING_PFX_PASSWORD: ${ secrets.PIXELOVERLAY_SIGNING_PFX_PASSWORD }}
-      RELEASE_VERSION_INPUT: ${ github.event.inputs.version }}
-      RELEASE_PRERELEASE_INPUT: ${ github.event.inputs.prerelease }}
-      RELEASE_CHANNEL_INPUT: ${ github.event.inputs.channel }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PIXEL_OVERLAY_SIGNING_PFX_BASE64: ${{ secrets.PIXELOVERLAY_SIGNING_PFX_BASE64 }}
+      PIXEL_OVERLAY_SIGNING_PFX_PASSWORD: ${{ secrets.PIXELOVERLAY_SIGNING_PFX_PASSWORD }}
+      RELEASE_VERSION_INPUT: ${{ github.event.inputs.version }}
+      RELEASE_PRERELEASE_INPUT: ${{ github.event.inputs.prerelease }}
+      RELEASE_CHANNEL_INPUT: ${{ github.event.inputs.channel }}
 
     steps:
       - name: Checkout source
@@ -96,7 +96,7 @@ jobs:
       - name: Prepare package version
         shell: pwsh
         env:
-          RELEASE_VERSION: ${ steps.release.outputs.version }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           $manifestPath = Join-Path $env:GITHUB_WORKSPACE 'Package.appxmanifest'
           $xml = New-Object System.Xml.XmlDocument
@@ -110,7 +110,7 @@ jobs:
       - name: Build signed x64 MSIX package
         shell: pwsh
         env:
-          RELEASE_VERSION: ${ steps.release.outputs.version }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           $pfxPath = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Signing.pfx'
           $bytes = [Convert]::FromBase64String($env:PIXEL_OVERLAY_SIGNING_PFX_BASE64)
@@ -173,7 +173,7 @@ jobs:
               MainPackagePath = $mainAsset
               DependencyPaths = $dependencyPaths
               Version = $env:RELEASE_VERSION
-              ReleaseTag = '${ steps.release.outputs.tag }}'
+              ReleaseTag = '${{ steps.release.outputs.tag }}'
               RepositoryFullName = 'valenokw2/bobsiwww222zxcv'
               OutputPath = $appInstallerPath
             }
@@ -207,7 +207,7 @@ jobs:
       - name: Build single-file Windows installer
         shell: pwsh
         env:
-          PIXEL_OVERLAY_VERSION: ${ steps.release.outputs.version }}
+          PIXEL_OVERLAY_VERSION: ${{ steps.release.outputs.version }}
         run: |
           $programFilesX86 = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)
           $searchPaths = @(
@@ -229,9 +229,9 @@ jobs:
       - name: Publish GitHub release assets
         shell: pwsh
         env:
-          RELEASE_VERSION: ${ steps.release.outputs.version }}
-          RELEASE_TAG: ${ steps.release.outputs.tag }}
-          RELEASE_PRERELEASE: ${ steps.release.outputs.prerelease }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
           $assets = @(
             (Join-Path $env:RELEASE_ASSET_DIRECTORY 'PixelOverlay-Setup.exe'),
@@ -277,7 +277,7 @@ jobs:
       - name: Publish the stable App Installer manifest
         shell: pwsh
         env:
-          RELEASE_TAG: ${ steps.release.outputs.tag }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           git fetch origin main
           git switch --force-create main origin/main
