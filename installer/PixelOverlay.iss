@@ -14,7 +14,7 @@ DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableWelcomePage=yes
 Uninstallable=no
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 WizardStyle=modern
@@ -41,25 +41,49 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
   PowerShellPath: String;
-  Parameters: String;
+  TrustParameters: String;
+  InstallParameters: String;
 begin
   Result := '';
   ExtractTemporaryFile('Install-PixelOverlay.ps1');
   ExtractTemporaryFile('PixelOverlay.cer');
 
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
-  Parameters :=
+  TrustParameters :=
+    '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
+    '-File "' + ExpandConstant('{tmp}\Install-PixelOverlay.ps1') + '" ' +
+    '-CertificatePath "' + ExpandConstant('{tmp}\PixelOverlay.cer') + '" ' +
+    '-TrustCertificateOnly';
+
+  Log('Installing the publisher certificate into Local Computer\Trusted People.');
+  if not Exec(PowerShellPath, TrustParameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    Result := 'Windows PowerShell could not be started to install the publisher certificate.';
+    Exit;
+  end;
+  if ResultCode <> 0 then
+  begin
+    Result :=
+      'Pixel Overlay could not install its publisher certificate (exit code ' + IntToStr(ResultCode) + ').' +
+      #13#10 + #13#10 +
+      'Check the installer log under the Windows account used for setup.';
+    Exit;
+  end;
+
+  InstallParameters :=
     '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
     '-File "' + ExpandConstant('{tmp}\Install-PixelOverlay.ps1') + '" ' +
     '-CertificatePath "' + ExpandConstant('{tmp}\PixelOverlay.cer') + '"';
 
-  Log('Starting the Pixel Overlay App Installer bootstrapper.');
-  if not Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  Log('Installing Pixel Overlay for the original signed-in Windows user.');
+  if not ExecAsOriginalUser(PowerShellPath, InstallParameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
-    Result := 'Windows PowerShell could not be started. No application files were changed.';
+    Result :=
+      'The publisher certificate was installed, but setup could not start the per-user package installation.' +
+      #13#10 + #13#10 +
+      'Close this installer and launch it normally from your Windows account. Do not use Run as administrator.';
     Exit;
   end;
-
   if ResultCode <> 0 then
   begin
     Result :=
