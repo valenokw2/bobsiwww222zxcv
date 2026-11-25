@@ -5,17 +5,22 @@
       AllowDrop="True" DragOver="Page_DragOver" Drop="Page_Drop">
     <Grid Background="{StaticResource PanelBrush}" Padding="16" RowSpacing="12">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="190"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-        <Grid ColumnSpacing="8"><StackPanel><TextBlock Text="PIXEL OVERLAY" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="Image-only Game Bar overlay" Opacity=".7" FontSize="12"/></StackPanel><Button Grid.Column="1" Content="Import image" Click="Import_Click" HorizontalAlignment="Right"/></Grid>
-        <Border Grid.Row="1" x:Name="PreviewSurface" Background="#12151C" CornerRadius="6" SizeChanged="PreviewSurface_SizeChanged" PointerPressed="Preview_PointerPressed" PointerMoved="Preview_PointerMoved" PointerReleased="Preview_PointerReleased">
+        <Grid Grid.Row="0" ColumnSpacing="8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel><TextBlock Text="PIXEL OVERLAY" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="Image-only Game Bar overlay" Opacity=".7" FontSize="12"/></StackPanel>
+            <Button Grid.Column="1" Content="Import image" Click="Import_Click" HorizontalAlignment="Right"/>
+        </Grid>
+        <Border Grid.Row="1" x:Name="PreviewSurface" Background="#12151C" CornerRadius="6"
+                SizeChanged="PreviewSurface_SizeChanged"
+                PointerPressed="Preview_PointerPressed" PointerMoved="Preview_PointerMoved"
+                PointerReleased="Preview_PointerReleased"
+                PointerCaptureLost="Preview_PointerCaptureLost" PointerCanceled="Preview_PointerCanceled">
             <Grid>
-                <TextBlock x:Name="EmptyPreview" Text="PNG, JPG, JPEG or GIF&#10;Drop here or import an image" TextAlignment="Center" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity=".55"/>
-                <Image x:Name="PreviewImage"
-                       HorizontalAlignment="Stretch"
-                       VerticalAlignment="Stretch"
-                       Stretch="Uniform">
-                    <Image.RenderTransform>
-                        <CompositeTransform x:Name="PreviewTransform" />
-                    </Image.RenderTransform>
+                <TextBlock x:Name="EmptyPreview" Text="PNG, JPG, JPEG or GIF&#10;Drop here or import an image"
+                           TextAlignment="Center" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity=".55"/>
+                <Image x:Name="PreviewImage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                       Stretch="Uniform" IsHitTestVisible="False">
+                    <Image.RenderTransform><CompositeTransform x:Name="PreviewTransform" /></Image.RenderTransform>
                 </Image>
             </Grid>
         </Border>
@@ -36,9 +41,9 @@
             <PivotItem Header="Library &amp; presets">
                 <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="170"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                     <TextBlock Text="Recent images" FontWeight="SemiBold"/>
-                    <ListView x:Name="LibraryList" Grid.Row="1" ItemsSource="{Binding Library}" SelectionChanged="Library_SelectionChanged"><ListView.ItemTemplate><DataTemplate><Grid Padding="4"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/><Button Grid.Column="1" Tag="{Binding}" Content="Remove" Click="RemoveImage_Click"/></Grid></DataTemplate></ListView.ItemTemplate></ListView>
+                    <ListView x:Name="LibraryList" Grid.Row="1" SelectionChanged="Library_SelectionChanged"><ListView.ItemTemplate><DataTemplate><Grid Padding="4"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/><Button Grid.Column="1" Tag="{Binding}" Content="Remove" Click="RemoveImage_Click"/></Grid></DataTemplate></ListView.ItemTemplate></ListView>
                     <Grid Grid.Row="2" Margin="0,8,0,0" ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="ProfileNameBox" Header="Preset name" PlaceholderText="e.g. Center dot"/><Button Grid.Column="1" Content="Save preset" Click="SavePreset_Click" VerticalAlignment="Bottom"/></Grid>
-                    <ListView x:Name="ProfileList" Grid.Row="3" ItemsSource="{Binding Profiles}" SelectionChanged="Profile_SelectionChanged"><ListView.ItemTemplate><DataTemplate><Grid Padding="4"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Name}"/><Button Grid.Column="1" Tag="{Binding}" Content="Apply" Click="ApplyPreset_Click"/><Button Grid.Column="2" Tag="{Binding}" Content="Delete" Click="RemovePreset_Click"/></Grid></DataTemplate></ListView.ItemTemplate></ListView>
+                    <ListView x:Name="ProfileList" Grid.Row="3" SelectionChanged="Profile_SelectionChanged"><ListView.ItemTemplate><DataTemplate><Grid Padding="4"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Name}"/><Button Grid.Column="1" Tag="{Binding}" Content="Apply" Click="ApplyPreset_Click"/><Button Grid.Column="2" Tag="{Binding}" Content="Delete" Click="RemovePreset_Click"/></Grid></DataTemplate></ListView.ItemTemplate></ListView>
                 </Grid>
             </PivotItem>
         </Pivot>

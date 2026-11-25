@@ -71,10 +71,7 @@ namespace PixelOverlay.Services
                 await file.DeleteAsync();
             }
             catch (FileNotFoundException) { }
-            SettingsStore.Current.Library.Remove(item);
-            if (SettingsStore.Current.State.SelectedImageId == item.Id)
-                SettingsStore.Current.State.SelectedImageId = null;
-            SettingsStore.Current.NotifyChanged();
+            SettingsStore.Current.RemoveImage(item.Id);
         }
 
         public ImageRecord Selected() => SettingsStore.Current.Library.FirstOrDefault(x => x.Id == SettingsStore.Current.State.SelectedImageId);

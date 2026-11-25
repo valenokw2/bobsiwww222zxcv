@@ -3,6 +3,7 @@ using System.IO;
 using SystemBuffer = System.Buffer;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
+using PixelOverlay.Models;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Storage.Streams;
@@ -12,10 +13,14 @@ using Windows.UI.Xaml.Media.Imaging;
 
 namespace PixelOverlay.Services
 {
-    // One decoded frame and one composited canvas. Frames are not retained between cycles.
+    // Decodes one frame at a time. The decoder uses an in-memory stream so deleting an
+    // imported GIF is never blocked by an open handle to the user's library file.
     public sealed class GifPlayer : IDisposable
     {
         private const long MaxCanvasPixels = 8L * 1024L * 1024L;
+        private const long MaxFramePixels = 8L * 1024L * 1024L;
+        private const ulong MaxGifFileBytes = 32UL * 1024UL * 1024UL;
+
         private readonly DispatcherTimer _timer = new DispatcherTimer();
         private BitmapDecoder _decoder;
         private IRandomAccessStream _stream;
@@ -33,6 +38,8 @@ namespace PixelOverlay.Services
         private int _previousHeight;
         private bool _loading;
         private bool _disposed;
+        private bool _isPlaying = true;
+        private double _playbackSpeed = 1;
         private int _generation;
 
         public ImageSource CurrentFrame => _bitmap;
@@ -42,24 +49,40 @@ namespace PixelOverlay.Services
 
         public GifPlayer() => _timer.Tick += async (s, e) => await AdvanceAsync();
 
-        public async Task OpenAsync(StorageFile file)
+        public async Task OpenAsync(StorageFile file, OverlayState playbackState)
         {
+            if (_disposed) throw new ObjectDisposedException(nameof(GifPlayer));
             var generation = ++_generation;
             Stop();
             DisposeDecoder();
-            _disposed = false;
-            IRandomAccessStream openedStream = null;
+            IRandomAccessStream memoryStream = null;
             try
             {
-                openedStream = await file.OpenAsync(FileAccessMode.Read);
-                if (!IsCurrent(generation)) { openedStream.Dispose(); return; }
+                var properties = await file.GetBasicPropertiesAsync();
+                if (properties.Size == 0 || properties.Size > MaxGifFileBytes)
+                    throw new InvalidDataException("GIF files must be between 1 byte and 32 MiB.");
 
-                var decoder = await BitmapDecoder.CreateAsync(openedStream);
-                if (!IsCurrent(generation)) { openedStream.Dispose(); return; }
+                IBuffer buffer = await FileIO.ReadBufferAsync(file);
+                if (buffer.Length > MaxGifFileBytes)
+                    throw new InvalidDataException("GIF files larger than 32 MiB are not supported.");
+                byte[] bytes = buffer.ToArray();
+
+                memoryStream = new InMemoryRandomAccessStream();
+                using (var writer = new DataWriter(memoryStream))
+                {
+                    writer.WriteBytes(bytes);
+                    await writer.StoreAsync();
+                    writer.DetachStream();
+                }
+                memoryStream.Seek(0);
+
+                if (!IsCurrent(generation)) { memoryStream.Dispose(); return; }
+                var decoder = await BitmapDecoder.CreateAsync(memoryStream);
+                if (!IsCurrent(generation)) { memoryStream.Dispose(); return; }
                 if (decoder.FrameCount == 0) throw new InvalidDataException("The GIF has no frames.");
 
-                var width = (int)decoder.PixelWidth;
-                var height = (int)decoder.PixelHeight;
+                var width = checked((int)decoder.PixelWidth);
+                var height = checked((int)decoder.PixelHeight);
                 if (width <= 0 || height <= 0 || width > 8192 || height > 8192)
                     throw new InvalidDataException("GIF dimensions must be between 1 and 8192 pixels.");
 
@@ -67,8 +90,8 @@ namespace PixelOverlay.Services
                 if (pixelCount > MaxCanvasPixels)
                     throw new InvalidDataException("GIFs larger than 8 megapixels are not supported.");
 
-                _stream = openedStream;
-                openedStream = null;
+                _stream = memoryStream;
+                memoryStream = null;
                 _decoder = decoder;
                 _width = width;
                 _height = height;
@@ -77,11 +100,11 @@ namespace PixelOverlay.Services
                 _previousDisposal = 0;
 
                 await RenderCurrentAsync(generation);
-                if (IsCurrent(generation)) UpdateSchedule();
+                if (IsCurrent(generation)) UpdateSchedule(playbackState);
             }
             catch
             {
-                openedStream?.Dispose();
+                memoryStream?.Dispose();
                 if (generation == _generation)
                 {
                     Stop();
@@ -92,12 +115,19 @@ namespace PixelOverlay.Services
             }
         }
 
-        public void UpdateSchedule()
+        public void UpdateSchedule(OverlayState playbackState)
+        {
+            _isPlaying = playbackState != null && playbackState.GifPlaying;
+            if (playbackState != null)
+                _playbackSpeed = Math.Max(0.25, Math.Min(4, playbackState.GifSpeed));
+            ScheduleNextFrame();
+        }
+
+        private void ScheduleNextFrame()
         {
             _timer.Stop();
-            if (_decoder == null || _disposed || !SettingsStore.Current.State.GifPlaying || _decoder.FrameCount < 2) return;
-            var speed = Math.Max(0.25, SettingsStore.Current.State.GifSpeed);
-            _timer.Interval = TimeSpan.FromMilliseconds(Math.Max(10, _lastDelayMs / speed));
+            if (_decoder == null || _disposed || !_isPlaying || _decoder.FrameCount < 2) return;
+            _timer.Interval = TimeSpan.FromMilliseconds(Math.Max(10, _lastDelayMs / _playbackSpeed));
             _timer.Start();
         }
 
@@ -108,9 +138,17 @@ namespace PixelOverlay.Services
             _timer.Stop();
             try
             {
-                _frameIndex = (_frameIndex + 1) % (int)_decoder.FrameCount;
+                int nextFrame = (_frameIndex + 1) % (int)_decoder.FrameCount;
+                if (nextFrame == 0)
+                {
+                    // A new animation cycle starts with a clean transparent logical canvas.
+                    Array.Clear(_canvas, 0, _canvas.Length);
+                    _snapshot = null;
+                    _previousDisposal = 0;
+                }
+                _frameIndex = nextFrame;
                 await RenderCurrentAsync(generation);
-                if (IsCurrent(generation)) UpdateSchedule();
+                if (IsCurrent(generation)) ScheduleNextFrame();
             }
             catch (Exception ex)
             {
@@ -125,25 +163,26 @@ namespace PixelOverlay.Services
         private async Task RenderCurrentAsync(int generation)
         {
             var decoder = _decoder;
-            if (decoder == null || !IsCurrent(generation)) return;
+            var canvas = _canvas;
+            if (decoder == null || canvas == null || !IsCurrent(generation)) return;
             _loading = true;
             try
             {
-                ApplyPreviousDisposal();
                 var frame = await decoder.GetFrameAsync((uint)_frameIndex);
-                if (!IsCurrent(generation) || !ReferenceEquals(decoder, _decoder) || _canvas == null) return;
+                if (!IsCurrent(generation) || !ReferenceEquals(decoder, _decoder) || !ReferenceEquals(canvas, _canvas)) return;
 
                 var properties = frame.BitmapProperties;
                 int left = await TryReadAsync(properties, "/imgdesc/Left");
                 int top = await TryReadAsync(properties, "/imgdesc/Top");
                 int disposal = await TryReadAsync(properties, "/grctlext/Disposal");
                 int delayCs = await TryReadAsync(properties, "/grctlext/Delay");
-                int frameWidth = (int)frame.PixelWidth;
-                int frameHeight = (int)frame.PixelHeight;
+                int frameWidth = checked((int)frame.PixelWidth);
+                int frameHeight = checked((int)frame.PixelHeight);
+                long framePixels = (long)frameWidth * frameHeight;
 
-                if (!IsCurrent(generation) || _canvas == null) return;
-                // Disposal 3 restores the canvas from before this frame was drawn.
-                if (disposal == 3) _snapshot = (byte[])_canvas.Clone();
+                if (frameWidth <= 0 || frameHeight <= 0 || framePixels > MaxFramePixels)
+                    throw new InvalidDataException("The GIF contains a frame larger than 8 megapixels.");
+                if (!IsCurrent(generation) || !ReferenceEquals(canvas, _canvas)) return;
 
                 var pixels = await frame.GetPixelDataAsync(
                     BitmapPixelFormat.Bgra8,
@@ -151,17 +190,38 @@ namespace PixelOverlay.Services
                     new BitmapTransform(),
                     ExifOrientationMode.IgnoreExifOrientation,
                     ColorManagementMode.DoNotColorManage);
-                if (!IsCurrent(generation) || _canvas == null) return;
+                byte[] source = pixels.DetachPixelData();
+                if (!IsCurrent(generation) || !ReferenceEquals(canvas, _canvas)) return;
+                if ((long)source.Length < framePixels * 4L)
+                    throw new InvalidDataException("The GIF decoder returned an incomplete frame buffer.");
 
-                Blit(pixels.DetachPixelData(), frameWidth, frameHeight, left, top);
-                PublishCanvas();
+                int previousDisposal = _previousDisposal;
+                int previousLeft = _previousLeft;
+                int previousTop = _previousTop;
+                int previousWidth = _previousWidth;
+                int previousHeight = _previousHeight;
+                byte[] nextSnapshot = _snapshot;
+                int canvasWidth = _width;
+                int canvasHeight = _height;
 
+                // Pixel blending and disposal snapshots are CPU work. Do not block the XAML dispatcher.
+                await Task.Run(() =>
+                {
+                    ApplyPreviousDisposal(canvas, nextSnapshot, previousDisposal,
+                        previousLeft, previousTop, previousWidth, previousHeight, canvasWidth, canvasHeight);
+                    if (disposal == 3) nextSnapshot = (byte[])canvas.Clone();
+                    Blit(canvas, source, frameWidth, frameHeight, left, top, canvasWidth, canvasHeight);
+                });
+
+                if (!IsCurrent(generation) || !ReferenceEquals(canvas, _canvas)) return;
+                _snapshot = nextSnapshot;
                 _previousDisposal = disposal;
                 _previousLeft = left;
                 _previousTop = top;
                 _previousWidth = frameWidth;
                 _previousHeight = frameHeight;
                 _lastDelayMs = DelayToMilliseconds(delayCs);
+                PublishCanvas();
                 FrameChanged?.Invoke(this, EventArgs.Empty);
             }
             finally { _loading = false; }
@@ -179,51 +239,53 @@ namespace PixelOverlay.Services
             _bitmap.Invalidate();
         }
 
-        private void ApplyPreviousDisposal()
+        private static void ApplyPreviousDisposal(byte[] canvas, byte[] snapshot, int disposal,
+            int left, int top, int width, int height, int canvasWidth, int canvasHeight)
         {
-            if (_previousDisposal == 2) Clear(_previousLeft, _previousTop, _previousWidth, _previousHeight);
-            else if (_previousDisposal == 3 && _snapshot != null) SystemBuffer.BlockCopy(_snapshot, 0, _canvas, 0, _canvas.Length);
+            if (disposal == 2)
+                Clear(canvas, left, top, width, height, canvasWidth, canvasHeight);
+            else if (disposal == 3 && snapshot != null)
+                SystemBuffer.BlockCopy(snapshot, 0, canvas, 0, canvas.Length);
         }
 
-        private void Clear(int left, int top, int width, int height)
+        private static void Clear(byte[] canvas, int left, int top, int width, int height, int canvasWidth, int canvasHeight)
         {
             for (int y = 0; y < height; y++)
             {
                 int destinationY = top + y;
-                if (destinationY < 0 || destinationY >= _height) continue;
+                if (destinationY < 0 || destinationY >= canvasHeight) continue;
                 int rowStart = Math.Max(0, left);
-                int rowEnd = Math.Min(_width, left + width);
+                int rowEnd = (int)Math.Min(canvasWidth, (long)left + width);
                 if (rowEnd <= rowStart) continue;
-                Array.Clear(_canvas, (destinationY * _width + rowStart) * 4, (rowEnd - rowStart) * 4);
+                Array.Clear(canvas, (destinationY * canvasWidth + rowStart) * 4, (rowEnd - rowStart) * 4);
             }
         }
 
-        private void Blit(byte[] source, int frameWidth, int frameHeight, int left, int top)
+        private static void Blit(byte[] canvas, byte[] source, int frameWidth, int frameHeight,
+            int left, int top, int canvasWidth, int canvasHeight)
         {
-            if (source == null || frameWidth <= 0 || frameHeight <= 0) return;
-            if ((long)source.Length < (long)frameWidth * frameHeight * 4L) return;
             for (int y = 0; y < frameHeight; y++)
             {
                 int destinationY = top + y;
-                if (destinationY < 0 || destinationY >= _height) continue;
+                if (destinationY < 0 || destinationY >= canvasHeight) continue;
                 for (int x = 0; x < frameWidth; x++)
                 {
                     int destinationX = left + x;
-                    if (destinationX < 0 || destinationX >= _width) continue;
+                    if (destinationX < 0 || destinationX >= canvasWidth) continue;
                     int sourceIndex = (y * frameWidth + x) * 4;
                     byte alpha = source[sourceIndex + 3];
                     if (alpha == 0) continue;
-                    int destinationIndex = (destinationY * _width + destinationX) * 4;
+                    int destinationIndex = (destinationY * canvasWidth + destinationX) * 4;
                     if (alpha == 255)
                     {
-                        SystemBuffer.BlockCopy(source, sourceIndex, _canvas, destinationIndex, 4);
+                        SystemBuffer.BlockCopy(source, sourceIndex, canvas, destinationIndex, 4);
                         continue;
                     }
                     int inverse = 255 - alpha;
-                    _canvas[destinationIndex] = (byte)(source[sourceIndex] + (_canvas[destinationIndex] * inverse) / 255);
-                    _canvas[destinationIndex + 1] = (byte)(source[sourceIndex + 1] + (_canvas[destinationIndex + 1] * inverse) / 255);
-                    _canvas[destinationIndex + 2] = (byte)(source[sourceIndex + 2] + (_canvas[destinationIndex + 2] * inverse) / 255);
-                    _canvas[destinationIndex + 3] = (byte)(alpha + (_canvas[destinationIndex + 3] * inverse) / 255);
+                    canvas[destinationIndex] = (byte)(source[sourceIndex] + (canvas[destinationIndex] * inverse) / 255);
+                    canvas[destinationIndex + 1] = (byte)(source[sourceIndex + 1] + (canvas[destinationIndex + 1] * inverse) / 255);
+                    canvas[destinationIndex + 2] = (byte)(source[sourceIndex + 2] + (canvas[destinationIndex + 2] * inverse) / 255);
+                    canvas[destinationIndex + 3] = (byte)(alpha + (canvas[destinationIndex + 3] * inverse) / 255);
                 }
             }
         }
@@ -240,11 +302,10 @@ namespace PixelOverlay.Services
             return 0;
         }
 
-        // GIF delay is stored in centiseconds. Players treat 0 and 1 as 100 ms.
         public static int DelayToMilliseconds(int centiseconds)
         {
             if (centiseconds <= 1) return 100;
-            return centiseconds * 10;
+            return Math.Max(10, centiseconds * 10);
         }
 
         public void Stop() => _timer.Stop();
@@ -258,10 +319,7 @@ namespace PixelOverlay.Services
             DisposeDecoder();
         }
 
-        private bool IsCurrent(int generation)
-        {
-            return !_disposed && generation == _generation;
-        }
+        private bool IsCurrent(int generation) => !_disposed && generation == _generation;
 
         private void DisposeDecoder()
         {

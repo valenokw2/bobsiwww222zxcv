@@ -109,7 +109,7 @@ namespace PixelOverlay.Views
             Hint.Visibility = Visibility.Collapsed;
             if (_loadedId == item.Id)
             {
-                if (item.IsGif) _gif?.UpdateSchedule();
+                if (item.IsGif) _gif?.UpdateSchedule(state);
                 return;
             }
 
@@ -148,7 +148,7 @@ namespace PixelOverlay.Views
                             Hint.Visibility = Visibility.Visible;
                         }
                     };
-                    await player.OpenAsync(file);
+                    await player.OpenAsync(file, state);
                     if (!IsCurrentLoad(generation, item.Id))
                     {
                         player.Dispose();
