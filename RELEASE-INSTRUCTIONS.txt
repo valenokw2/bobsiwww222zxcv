@@ -1,39 +1,40 @@
-PIXEL OVERLAY — BETA INSTALLATION
+PIXEL OVERLAY — WINDOWS INSTALLER
 =================================
 
-Requirements
-- Windows 10 version 2004 (build 19041) or later.
-- Xbox Game Bar installed and enabled.
-- 64-bit Windows.
-
 Install
-1. Extract the entire ZIP to a normal folder. Do not run Install.ps1 from inside the ZIP.
-2. Open PowerShell in the extracted folder.
-3. Run:
+1. Download PixelOverlay-Setup.exe from the official GitHub Releases page.
+2. Close Xbox Game Bar if it is currently open.
+3. Run PixelOverlay-Setup.exe and click Install.
+4. When installation finishes, press Win+G, open Widgets, and select Pixel Overlay.
 
-   Set-ExecutionPolicy -Scope Process Bypass
-   $package = Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -in '.msix', '.appx' -and $_.FullName -notmatch '[\\/]Dependencies[\\/]' } | Select-Object -First 1
-   .\Install.ps1 -PackagePath $package.FullName -CertificatePath .\PixelOverlay.cer
+The setup program:
+- Checks for 64-bit Windows 10 version 2004 (build 19041) or later.
+- Adds the included publisher certificate to the current Windows user's Trusted People store.
+- Downloads the signed App Installer manifest and installs Pixel Overlay with its required x64 framework dependencies.
+- Registers the stable App Installer update source.
 
-4. Press Win+G, open the Widgets menu, and choose Pixel Overlay.
-5. Open Pixel Overlay Settings to import an image. PNG, JPG, JPEG and GIF are supported.
+Updates
+- Windows checks for updates when the app is launched (at most once every 12 hours).
+- An automatic background update task is also registered. Windows schedules these checks periodically when background servicing is available.
+- Update checks are controlled by Windows App Installer and may be delayed while the device is offline or the app is in use.
+- Future updates keep the same package identity and signing certificate. Users do not need to download the setup program again.
 
-Certificate
-This beta is signed with a self-signed test certificate. Install.ps1 imports the included
-PixelOverlay.cer into the current Windows user's Trusted People certificate store.
-This is expected for a sideload test build and is not a Microsoft Store signing certificate.
-Only install it if you trust this release and its source.
+Security and reputation
+This beta is signed with a persistent self-signed Code Signing certificate. The setup imports the matching public certificate for the current Windows user. Windows SmartScreen may still show an unrecognized-app warning because the certificate is not issued by a public commercial certificate authority and the installer has no Microsoft Store reputation. Only run releases downloaded from the official repository:
+https://github.com/valenokw2/bobsiwww222zxcv/releases
+
+Requirements
+- 64-bit Windows 10 version 2004 (build 19041) or later.
+- Xbox Game Bar installed and enabled.
+- Internet access during installation and update checks.
 
 Uninstall
-Open PowerShell and run:
-
-   Get-AppxPackage PixelOverlay | Remove-AppxPackage
-
-The local app data folder is not automatically deleted by this command.
+Open Windows Settings > Apps > Installed apps, find Pixel Overlay, and choose Uninstall.
+The app's local settings and image library are kept by Windows package removal unless the user removes its app data separately.
 
 Troubleshooting
-- If Windows reports that the package publisher cannot be verified, confirm that the
-  included PixelOverlay.cer was imported successfully for the same Windows user.
-- If Add-AppxPackage reports a missing framework dependency, keep the full extracted
-  folder structure (including Dependencies) intact and run Install.ps1 again.
-- After installing, fully close and reopen Xbox Game Bar if the widget list does not refresh.
+- If the package publisher cannot be verified, confirm that the setup completed and installed the included certificate for the same Windows user.
+- If the installer reports a failure, inspect:
+  %LOCALAPPDATA%\PixelOverlay\Installer.log
+- If Xbox Game Bar was not detected, install or enable Xbox Game Bar from Microsoft Store, then press Win+G.
+- If the widget list does not refresh, fully close and reopen Xbox Game Bar.
