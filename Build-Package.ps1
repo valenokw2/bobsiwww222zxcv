@@ -94,8 +94,3 @@ try {
     Write-Host "Signing certificate: $($cert.Subject) [$thumbprint]"
     Write-Host "Public certificate exported to: $cer"
 }
-finally {
-    if ($thumbprint) {
-        Remove-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint" -ErrorAction SilentlyContinue
-    }
-}
