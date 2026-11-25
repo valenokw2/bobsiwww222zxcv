@@ -1,13 +1,17 @@
-# Pixel Overlay v1.0.1 Beta 1
+# Pixel Overlay v__VERSION__
 
-First public test package for the Windows / Xbox Game Bar UWP widget.
+This release introduces a single-file Windows setup program and the first persistent update channel.
 
-## Included
-- Signed x64 MSIX/AppX package.
-- Self-signed test certificate and PowerShell installer.
-- Any x64 framework dependencies produced by the packaging build.
+## Installation and updates
+- PixelOverlay-Setup.exe built with Inno Setup.
+- Automatically checks Windows version and x64 architecture.
+- Installs the publisher certificate for the current Windows user.
+- Installs the signed MSIX package and its x64 framework dependencies through Windows App Installer.
+- Registers a stable .appinstaller update URI hosted from the repository.
+- Enables on-launch update checks and Windows background update checks.
+- Uses a persistent Code Signing certificate imported from GitHub Actions Secrets; the private key is not stored in the repository.
 
-## Current functionality
+## Application functionality
 - Import PNG, JPG, JPEG and GIF images through the settings widget.
 - Drag and drop images into the settings widget.
 - Image library and persistent selection.
@@ -16,10 +20,10 @@ First public test package for the Windows / Xbox Game Bar UWP widget.
 - Proportional image fitting as the Game Bar widget is resized.
 
 ## Known limitations
-- This is a beta sideload build, not a Microsoft Store release.
-- The package uses a self-signed test certificate; the included installer imports it into the current user's Trusted People store.
+- Beta sideload build, not a Microsoft Store release.
+- The package publisher certificate is self-signed; Windows SmartScreen may still warn about the installer.
 - Settings preview displays the first GIF frame; animated playback is in the overlay.
 - Position offsets are in device-independent pixels, not normalized percentages of the widget size.
-- Runtime behavior inside the actual Game Bar host still needs hands-on validation across Windows systems.
+- Runtime behavior inside the actual Game Bar host still requires hands-on validation on supported Windows systems.
 
-Report failures with the Windows version, exact reproduction steps, image format/dimensions, and a screenshot of the widget.
+Report failures with the Windows build, exact reproduction steps, image format/dimensions, and a screenshot of the widget.
