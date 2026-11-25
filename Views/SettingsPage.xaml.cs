@@ -94,10 +94,10 @@ namespace PixelOverlay.Views
             if (_cleanedUp) return;
             try
             {
-                var snapshot = SettingsStore.Current.GetSnapshot();
                 _ = Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
                 {
-                    if (!_cleanedUp) _ = ApplyStoreSnapshotSafelyAsync(snapshot);
+                    if (!_cleanedUp)
+                        _ = ApplyStoreSnapshotSafelyAsync(SettingsStore.Current.GetSnapshot());
                 });
             }
             catch (Exception ex) { AppDiagnostics.Log("Settings state dispatch", ex); }

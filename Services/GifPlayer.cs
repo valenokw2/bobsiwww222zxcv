@@ -65,12 +65,10 @@ namespace PixelOverlay.Services
                 IBuffer buffer = await FileIO.ReadBufferAsync(file);
                 if (buffer.Length > MaxGifFileBytes)
                     throw new InvalidDataException("GIF files larger than 32 MiB are not supported.");
-                byte[] bytes = buffer.ToArray();
-
                 memoryStream = new InMemoryRandomAccessStream();
                 using (var writer = new DataWriter(memoryStream))
                 {
-                    writer.WriteBytes(bytes);
+                    writer.WriteBuffer(buffer);
                     await writer.StoreAsync();
                     writer.DetachStream();
                 }
@@ -139,15 +137,9 @@ namespace PixelOverlay.Services
             try
             {
                 int nextFrame = (_frameIndex + 1) % (int)_decoder.FrameCount;
-                if (nextFrame == 0)
-                {
-                    // A new animation cycle starts with a clean transparent logical canvas.
-                    Array.Clear(_canvas, 0, _canvas.Length);
-                    _snapshot = null;
-                    _previousDisposal = 0;
-                }
+                bool startNewCycle = nextFrame == 0;
                 _frameIndex = nextFrame;
-                await RenderCurrentAsync(generation);
+                await RenderCurrentAsync(generation, startNewCycle);
                 if (IsCurrent(generation)) ScheduleNextFrame();
             }
             catch (Exception ex)
@@ -160,7 +152,7 @@ namespace PixelOverlay.Services
             }
         }
 
-        private async Task RenderCurrentAsync(int generation)
+        private async Task RenderCurrentAsync(int generation, bool startNewCycle = false)
         {
             var decoder = _decoder;
             var canvas = _canvas;
@@ -195,20 +187,23 @@ namespace PixelOverlay.Services
                 if ((long)source.Length < framePixels * 4L)
                     throw new InvalidDataException("The GIF decoder returned an incomplete frame buffer.");
 
-                int previousDisposal = _previousDisposal;
+                int previousDisposal = startNewCycle ? 0 : _previousDisposal;
                 int previousLeft = _previousLeft;
                 int previousTop = _previousTop;
                 int previousWidth = _previousWidth;
                 int previousHeight = _previousHeight;
-                byte[] nextSnapshot = _snapshot;
+                byte[] nextSnapshot = startNewCycle ? null : _snapshot;
                 int canvasWidth = _width;
                 int canvasHeight = _height;
 
                 // Pixel blending and disposal snapshots are CPU work. Do not block the XAML dispatcher.
                 await Task.Run(() =>
                 {
-                    ApplyPreviousDisposal(canvas, nextSnapshot, previousDisposal,
-                        previousLeft, previousTop, previousWidth, previousHeight, canvasWidth, canvasHeight);
+                    if (startNewCycle)
+                        Array.Clear(canvas, 0, canvas.Length);
+                    else
+                        ApplyPreviousDisposal(canvas, nextSnapshot, previousDisposal,
+                            previousLeft, previousTop, previousWidth, previousHeight, canvasWidth, canvasHeight);
                     if (disposal == 3) nextSnapshot = (byte[])canvas.Clone();
                     Blit(canvas, source, frameWidth, frameHeight, left, top, canvasWidth, canvasHeight);
                 });

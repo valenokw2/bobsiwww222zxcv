@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
+using System.Linq;
 using Microsoft.Gaming.XboxGameBar;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
+using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Navigation;
@@ -14,9 +15,23 @@ namespace PixelOverlay
 {
     sealed partial class App : Application
     {
-        // Game Bar requires this object to stay alive for the lifetime of the widget's CoreWindow.
-        private readonly List<XboxGameBarWidget> _widgets = new List<XboxGameBarWidget>();
-        public App() { InitializeComponent(); UnhandledException += OnUnhandledException; Suspending += OnSuspending; }
+        private sealed class WidgetRegistration
+        {
+            public XboxGameBarWidget Widget { get; set; }
+            public CoreDispatcher Dispatcher { get; set; }
+            public Action Cleanup { get; set; }
+        }
+
+        private readonly object _widgetsSync = new object();
+        // Each Game Bar widget owns a separate CoreWindow and dispatcher.
+        private readonly List<WidgetRegistration> _widgets = new List<WidgetRegistration>();
+
+        public App()
+        {
+            InitializeComponent();
+            UnhandledException += OnUnhandledException;
+            Suspending += OnSuspending;
+        }
 
         protected override async void OnActivated(IActivatedEventArgs args)
         {
@@ -24,18 +39,56 @@ namespace PixelOverlay
             {
                 var widgetArgs = args as XboxGameBarWidgetActivatedEventArgs;
                 var protocol = args as IProtocolActivatedEventArgs;
-                if (args.Kind != ActivationKind.Protocol || widgetArgs == null || protocol == null || protocol.Uri.Scheme != "ms-gamebarwidget") return;
-                if (!widgetArgs.IsLaunchActivation) return; // The SDK forbids recreating XboxGameBarWidget on repeat activation.
+                if (args.Kind != ActivationKind.Protocol || widgetArgs == null ||
+                    protocol == null || protocol.Uri.Scheme != "ms-gamebarwidget")
+                    return;
+
+                // Re-activation belongs to an existing widget. Keep its host object alive;
+                // never create a second XboxGameBarWidget for the same activation.
+                if (!widgetArgs.IsLaunchActivation) return;
+
+                Type pageType;
+                if (widgetArgs.AppExtensionId == "PixelOverlay") pageType = typeof(OverlayPage);
+                else if (widgetArgs.AppExtensionId == "PixelOverlaySettings") pageType = typeof(SettingsPage);
+                else return;
 
                 await SettingsStore.Current.LoadAsync();
-                var frame = new Frame(); frame.NavigationFailed += OnNavigationFailed;
-                Window.Current.Content = frame;
-                var widget = new XboxGameBarWidget(widgetArgs, Window.Current.CoreWindow, frame);
-                _widgets.Add(widget);
-                if (widgetArgs.AppExtensionId == "PixelOverlay") frame.Navigate(typeof(OverlayPage), widget);
-                else if (widgetArgs.AppExtensionId == "PixelOverlaySettings") frame.Navigate(typeof(SettingsPage), widget);
-                else return;
-                Window.Current.Activate();
+
+                var window = Window.Current;
+                var frame = new Frame();
+                frame.NavigationFailed += OnNavigationFailed;
+                window.Content = frame;
+
+                var widget = new XboxGameBarWidget(widgetArgs, window.CoreWindow, frame);
+                if (!frame.Navigate(pageType, widget))
+                    throw new InvalidOperationException("Game Bar widget page navigation was rejected.");
+
+                var page = frame.Content as Page;
+                Action cleanup = page is OverlayPage overlay
+                    ? (Action)overlay.OnWindowClosed
+                    : page is SettingsPage settings
+                        ? (Action)settings.OnWindowClosed
+                        : delegate { };
+
+                var registration = new WidgetRegistration
+                {
+                    Widget = widget,
+                    Dispatcher = window.Dispatcher,
+                    Cleanup = cleanup
+                };
+
+                lock (_widgetsSync) _widgets.Add(registration);
+                window.Closed += (sender, e) =>
+                {
+                    try { registration.Cleanup(); }
+                    catch (Exception ex) { AppDiagnostics.Log("Widget window cleanup", ex); }
+                    finally
+                    {
+                        lock (_widgetsSync) _widgets.Remove(registration);
+                    }
+                };
+
+                window.Activate();
             }
             catch (Exception ex) { AppDiagnostics.Log("Widget activation", ex); }
         }
@@ -44,13 +97,24 @@ namespace PixelOverlay
         {
             try
             {
-                // A normal launch is useful while designing the settings UI; Game Bar activation is used in production.
                 await SettingsStore.Current.LoadAsync();
-                var frame = Window.Current.Content as Frame ?? new Frame();
+                var window = Window.Current;
+                var frame = window.Content as Frame ?? new Frame();
                 frame.NavigationFailed += OnNavigationFailed;
-                Window.Current.Content = frame;
-                if (frame.Content == null) frame.Navigate(typeof(SettingsPage), null);
-                Window.Current.Activate();
+                window.Content = frame;
+                if (frame.Content == null)
+                    frame.Navigate(typeof(SettingsPage), null);
+
+                window.Closed += (sender, args) =>
+                {
+                    try
+                    {
+                        if (frame.Content is SettingsPage settings)
+                            settings.OnWindowClosed();
+                    }
+                    catch (Exception ex) { AppDiagnostics.Log("Normal window cleanup", ex); }
+                };
+                window.Activate();
             }
             catch (Exception ex) { AppDiagnostics.Log("Normal launch", ex); }
         }
@@ -64,15 +128,40 @@ namespace PixelOverlay
         private async void OnSuspending(object sender, SuspendingEventArgs e)
         {
             var deferral = e.SuspendingOperation.GetDeferral();
-            try { await SettingsStore.Current.FlushAsync(); }
+            try
+            {
+                WidgetRegistration[] registrations;
+                lock (_widgetsSync) registrations = _widgets.ToArray();
+
+                // The last CoreWindow does not raise Window.Closed. Suspension is the fallback.
+                foreach (var registration in registrations)
+                {
+                    try
+                    {
+                        if (registration.Dispatcher.HasThreadAccess)
+                            registration.Cleanup();
+                        else
+                            await registration.Dispatcher.RunAsync(CoreDispatcherPriority.High,
+                                () => registration.Cleanup());
+                    }
+                    catch (Exception ex) { AppDiagnostics.Log("Suspending widget cleanup", ex); }
+                }
+
+                lock (_widgetsSync) _widgets.Clear();
+                await SettingsStore.Current.FlushAsync();
+            }
             catch (Exception ex) { AppDiagnostics.Log("Suspend settings flush", ex); }
             finally { deferral.Complete(); }
         }
 
         private static void OnNavigationFailed(object sender, NavigationFailedEventArgs e)
         {
-            AppDiagnostics.Log("Navigation failed", new InvalidOperationException("Failed to load " + e.SourcePageType.FullName));
-            Window.Current.Content = new TextBlock { Text = "Pixel Overlay could not open this page. See pixel-overlay-diagnostics.log." };
+            AppDiagnostics.Log("Navigation failed", new InvalidOperationException(
+                "Failed to load " + e.SourcePageType.FullName));
+            Window.Current.Content = new TextBlock
+            {
+                Text = "Pixel Overlay could not open this page. See pixel-overlay-diagnostics.log."
+            };
         }
     }
 }
