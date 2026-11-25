@@ -14,6 +14,9 @@ namespace PixelOverlay.Services
     {
         private const string FolderName = "Library";
         private const int MaxEdge = 8192;
+        private const long MaxGifPixels = 8L * 1024L * 1024L;
+        private const double MaxDecodedPixels = 12d * 1024d * 1024d;
+        private const uint DefaultDecodeEdge = 4096;
 
         public async Task<ImageRecord> PickAndImportAsync()
         {
@@ -76,13 +79,37 @@ namespace PixelOverlay.Services
 
         public ImageRecord Selected() => SettingsStore.Current.Library.FirstOrDefault(x => x.Id == SettingsStore.Current.State.SelectedImageId);
 
-        public async Task<BitmapImage> LoadBitmapAsync(ImageRecord item)
+        public Task<BitmapImage> LoadBitmapAsync(ImageRecord item)
+        {
+            return LoadBitmapAsync(item, DefaultDecodeEdge);
+        }
+
+        public async Task<BitmapImage> LoadBitmapAsync(ImageRecord item, uint maxDecodeEdge)
         {
             if (item == null) return null;
             var file = await GetFileAsync(item);
             using (var stream = await file.OpenReadAsync())
             {
+                var decoder = await BitmapDecoder.CreateAsync(stream);
+                var sourceWidth = decoder.PixelWidth;
+                var sourceHeight = decoder.PixelHeight;
+                if (sourceWidth == 0 || sourceHeight == 0)
+                    throw new InvalidDataException("The image has no pixels.");
+
+                // Decode close to the widget's useful resolution instead of allocating the full
+                // source bitmap. A 12-megapixel ceiling also protects against extreme aspect ratios.
+                var scale = Math.Min(1d, (double)Math.Max(1u, maxDecodeEdge) / Math.Max(sourceWidth, sourceHeight));
+                var sourcePixels = (double)sourceWidth * sourceHeight;
+                if (sourcePixels > MaxDecodedPixels)
+                    scale = Math.Min(scale, Math.Sqrt(MaxDecodedPixels / sourcePixels));
+
                 var bitmap = new BitmapImage();
+                if (sourceWidth >= sourceHeight)
+                    bitmap.DecodePixelWidth = (int)Math.Max(1d, Math.Floor(sourceWidth * scale));
+                else
+                    bitmap.DecodePixelHeight = (int)Math.Max(1d, Math.Floor(sourceHeight * scale));
+
+                stream.Seek(0);
                 await bitmap.SetSourceAsync(stream);
                 return bitmap;
             }
@@ -99,8 +126,13 @@ namespace PixelOverlay.Services
                         throw new InvalidDataException("The image has no pixels.");
                     if (decoder.PixelWidth > MaxEdge || decoder.PixelHeight > MaxEdge)
                         throw new InvalidDataException("Images larger than 8192 pixels on a side are not supported.");
-                    if (string.Equals(file.FileType, ".gif", StringComparison.OrdinalIgnoreCase) && decoder.FrameCount == 0)
-                        throw new InvalidDataException("The GIF has no frames.");
+                    if (string.Equals(file.FileType, ".gif", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (decoder.FrameCount == 0)
+                            throw new InvalidDataException("The GIF has no frames.");
+                        if ((long)decoder.PixelWidth * decoder.PixelHeight > MaxGifPixels)
+                            throw new InvalidDataException("GIFs larger than 8 megapixels are not supported. Resize the GIF and import it again.");
+                    }
                 }
             }
             catch (InvalidDataException) { throw; }
