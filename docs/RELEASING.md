@@ -6,10 +6,10 @@ The package publisher must remain CN=PixelOverlayDeveloper and every update must
 
 On a trusted Windows checkout, install GitHub CLI, authenticate it, and run:
 
-\`\`\`powershell
+~~~powershell
 gh auth login
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Initialize-SigningCertificate.ps1
-\`\`\`
+~~~
 
 The script creates or reuses a five-year Code Signing certificate in the current user's certificate store, exports a temporary PFX, uploads two repository Actions secrets, and deletes the temporary PFX. The release Setup imports the matching public certificate into Local Computer > Trusted People (never Trusted Root), because App Installer checks the machine certificate store:
 - PIXELOVERLAY_SIGNING_PFX_BASE64
