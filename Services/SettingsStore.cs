@@ -157,10 +157,26 @@ namespace PixelOverlay.Services
 
         public async Task FlushAsync()
         {
-            CancellationTokenSource pending;
-            lock (_sync) pending = _saveDelay;
-            if (pending != null) pending.Cancel();
-            await SaveAsync();
+            while (true)
+            {
+                CancellationTokenSource pending;
+                lock (_sync)
+                {
+                    pending = _saveDelay;
+                    _saveDelay = null;
+                }
+
+                CancelSafely(pending);
+                if (!await SaveAsync())
+                    throw new IOException("Settings could not be flushed to local storage. See pixel-overlay-diagnostics.log.");
+
+                lock (_sync)
+                {
+                    // A change can arrive at the end of a save, just before its semaphore
+                    // is released. Drain again instead of completing the suspension deferral.
+                    if (!_dirty) return;
+                }
+            }
         }
 
         private void MarkDirtyLocked()
@@ -183,7 +199,7 @@ namespace PixelOverlay.Services
                 previous = _saveDelay;
                 _saveDelay = next;
             }
-            if (previous != null) previous.Cancel();
+            CancelSafely(previous);
             _ = SaveAfterDelayAsync(next);
         }
 
@@ -206,7 +222,14 @@ namespace PixelOverlay.Services
             }
         }
 
-        private async Task SaveAsync()
+        private static void CancelSafely(CancellationTokenSource source)
+        {
+            if (source == null) return;
+            try { source.Cancel(); }
+            catch (ObjectDisposedException) { }
+        }
+
+        private async Task<bool> SaveAsync()
         {
             await _ioGate.WaitAsync();
             try
@@ -264,11 +287,13 @@ namespace PixelOverlay.Services
                 }
 
                 ApplicationData.Current.SignalDataChanged();
+                return true;
             }
             catch (Exception ex)
             {
                 lock (_sync) _dirty = true;
                 AppDiagnostics.Log("Settings save", ex);
+                return false;
             }
             finally
             {
