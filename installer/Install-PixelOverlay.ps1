@@ -42,6 +42,14 @@ function ConvertFrom-SafeXmlText {
     return ,$document
 }
 
+function Get-CertificateSha256 {
+    param([Parameter(Mandatory = $true)][System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($sha256.ComputeHash($Certificate.RawData)).Replace('-', '') }
+    finally { $sha256.Dispose() }
+}
+
 function Send-SetupProgress {
     param([int]$Percent, [string]$Message)
     $safe = $Message -replace '[\r\n|]', ' '
@@ -271,7 +279,10 @@ try {
     }
 
     $trusted = Get-ChildItem 'Cert:\LocalMachine\TrustedPeople' |
-        Where-Object { $_.Thumbprint -eq $certificate.Thumbprint } |
+        Where-Object {
+            $_.Subject -eq 'CN=PixelOverlayDeveloper' -and
+            (Get-CertificateSha256 -Certificate $_) -eq $ExpectedCertificateSha256
+        } |
         Select-Object -First 1
     if (!$trusted) {
         throw 'The publisher certificate is not trusted by Windows. Close setup and approve the certificate trust prompt, then retry.'
