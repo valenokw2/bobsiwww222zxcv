@@ -124,7 +124,9 @@ namespace PixelOverlay.Services
         private void ScheduleNextFrame()
         {
             _timer.Stop();
-            if (_decoder == null || _disposed || !_isPlaying || _decoder.FrameCount < 2) return;
+            // A settings change can arrive while a frame is being decoded.
+            // Keep the timer stopped until the in-flight frame finishes.
+            if (_decoder == null || _disposed || _loading || !_isPlaying || _decoder.FrameCount < 2) return;
             _timer.Interval = TimeSpan.FromMilliseconds(Math.Max(10, _lastDelayMs / _playbackSpeed));
             _timer.Start();
         }

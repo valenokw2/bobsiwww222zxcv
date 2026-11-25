@@ -60,7 +60,7 @@ $certificateInfo = [System.Security.Cryptography.X509Certificates.X509Certificat
 if ($certificateInfo.Subject -ne 'CN=PixelOverlayDeveloper') {
     throw "Unexpected signing certificate subject: $($certificateInfo.Subject)"
 }
-Import-Certificate -FilePath $certificate -CertStoreLocation Cert:CurrentUserTrustedPeople | Out-Null
+Import-Certificate -FilePath $certificate -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
 
 $mainInfo = Get-AppxManifestInfo -Path $package
 $requiredNodes = $mainInfo.Manifest.SelectNodes("/*[local-name()='Package']/*[local-name()='Dependencies']/*[local-name()='PackageDependency']")
