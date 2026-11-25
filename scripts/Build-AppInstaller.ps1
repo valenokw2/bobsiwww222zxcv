@@ -74,7 +74,7 @@ if ($mainIdentity.ProcessorArchitecture -ne 'x64') {
 }
 
 $releaseBase = "https://github.com/$RepositoryFullName/releases/download/$ReleaseTag"
-$stableAppInstallerUri = "https://raw.githubusercontent.com/$RepositoryFullName/main/PixelOverlay.appinstaller"
+$stableAppInstallerUri = "https://github.com/$RepositoryFullName/releases/download/update-channel/PixelOverlay.appinstaller"
 $namespace = 'http://schemas.microsoft.com/appx/appinstaller/2021'
 
 $document = New-Object System.Xml.XmlDocument
