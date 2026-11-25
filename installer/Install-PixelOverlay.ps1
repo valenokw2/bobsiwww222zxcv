@@ -37,6 +37,72 @@ function Get-InstalledPixelOverlay {
         Select-Object -First 1
 }
 
+function Get-AppxFileIdentity {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $Path).Path)
+    try {
+        $entry = $archive.GetEntry('AppxManifest.xml')
+        if (!$entry) {
+            throw "Package '$Path' does not contain AppxManifest.xml."
+        }
+
+        $stream = $entry.Open()
+        try {
+            $reader = New-Object System.IO.StreamReader($stream)
+            try {
+                [xml]$manifest = $reader.ReadToEnd()
+            }
+            finally {
+                $reader.Dispose()
+            }
+        }
+        finally {
+            $stream.Dispose()
+        }
+
+        $identity = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Identity']")
+        if (!$identity) {
+            throw "Package '$Path' does not contain Package/Identity."
+        }
+
+        return [pscustomobject]@{
+            Name = $identity.GetAttribute('Name')
+            Publisher = $identity.GetAttribute('Publisher')
+            Version = [version]$identity.GetAttribute('Version')
+            Architecture = $identity.GetAttribute('ProcessorArchitecture')
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
+}
+
+function Get-DependenciesToInstall {
+    param([Parameter(Mandatory = $true)][string[]]$DependencyPaths)
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $needed = @()
+
+    foreach ($path in $DependencyPaths) {
+        $identity = Get-AppxFileIdentity -Path $path
+        $installed = Get-AppxPackage -Name $identity.Name -ErrorAction SilentlyContinue |
+            Where-Object { $_.Publisher -eq $identity.Publisher } |
+            Sort-Object { [version]$_.Version } -Descending |
+            Select-Object -First 1
+
+        if ($installed -and ([version]$installed.Version -ge $identity.Version)) {
+            Write-SetupLog ("Skipping already-installed dependency: {0} {1}" -f $identity.Name, $installed.Version)
+        }
+        else {
+            Write-SetupLog ("Dependency will be installed: {0} {1}" -f $identity.Name, $identity.Version)
+            $needed += $path
+        }
+    }
+
+    return ,$needed
+}
+
 function Write-SetupLog {
     param([string]$Message)
     try {
@@ -97,6 +163,9 @@ try {
             throw "A required framework dependency is missing: $(Split-Path -Leaf $dependency)"
         }
     }
+    $dependenciesToInstall = @(Get-DependenciesToInstall -DependencyPaths $dependencyPaths)
+    Write-SetupLog ("Dependencies supplied by setup: {0}; already satisfied: {1}" -f
+        $dependenciesToInstall.Count, ($dependencyPaths.Count - $dependenciesToInstall.Count))
 
     Send-SetupProgress 12 'Verifying the publisher certificate...'
     $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
@@ -126,25 +195,33 @@ try {
         exit 0
     }
 
-    Send-SetupProgress 25 'Installing the signed application and bundled framework dependencies...'
+    Send-SetupProgress 25 'Installing the signed application and required framework dependencies...'
+    $deploymentArguments = @{
+        Path = $mainPackage
+        ErrorAction = 'Stop'
+    }
+    if ($dependenciesToInstall.Count -gt 0) {
+        $deploymentArguments.DependencyPath = $dependenciesToInstall
+    }
     if ($ForceApplicationShutdown) {
         Write-SetupLog 'Retrying deployment with -ForceApplicationShutdown after explicit user approval.'
-        Add-AppxPackage -Path $mainPackage -DependencyPath $dependencyPaths -ForceApplicationShutdown -ErrorAction Stop
+        $deploymentArguments.ForceApplicationShutdown = $true
     }
     else {
-        Write-SetupLog 'Calling Add-AppxPackage with embedded MSIX and dependency packages.'
-        try {
-            Add-AppxPackage -Path $mainPackage -DependencyPath $dependencyPaths -ErrorAction Stop
+        Write-SetupLog 'Installing the app without re-deploying dependencies already present for this user.'
+    }
+
+    try {
+        Add-AppxPackage @deploymentArguments
+    }
+    catch {
+        $deploymentMessage = [string]$_.Exception.Message
+        if (!$ForceApplicationShutdown -and $deploymentMessage -match '(?i)0x80073D02') {
+            Write-SetupLog 'Windows reported ERROR_PACKAGES_IN_USE (0x80073D02). Waiting for user confirmation before force-closing dependent apps.'
+            Write-Output "PIXEL_SETUP_PACKAGES_IN_USE|$deploymentMessage"
+            exit 23
         }
-        catch {
-            $deploymentMessage = [string]$_.Exception.Message
-            if ($deploymentMessage -match '(?i)0x80073D02') {
-                Write-SetupLog 'Windows reported ERROR_PACKAGES_IN_USE (0x80073D02). Waiting for user confirmation before force-closing dependent apps.'
-                Write-Output "PIXEL_SETUP_PACKAGES_IN_USE|$deploymentMessage"
-                exit 23
-            }
-            throw
-        }
+        throw
     }
 
     Send-SetupProgress 78 'Verifying the installed application...'
