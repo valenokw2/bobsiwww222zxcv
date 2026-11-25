@@ -1,63 +1,298 @@
-name: PixelOverlay Windows Release
+name: Pixel Overlay Release
 
 on:
   push:
-    branches: [main]
+    tags:
+      - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "MSIX version in four-part format, for example 1.0.2.0"
+        required: true
+        default: "1.0.2.0"
+        type: string
+      prerelease:
+        description: "Publish as a beta/prerelease"
+        required: true
+        default: true
+        type: boolean
+      channel:
+        description: "Prerelease label, for example beta.1"
+        required: false
+        default: "beta.1"
+        type: string
 
 permissions:
   contents: write
 
+concurrency:
+  group: pixel-overlay-release
+  cancel-in-progress: false
+
 jobs:
-  build:
+  release:
     runs-on: windows-2025
+    env:
+      GH_TOKEN: ${ secrets.GITHUB_TOKEN }}
+      PIXEL_OVERLAY_SIGNING_PFX_BASE64: ${ secrets.PIXELOVERLAY_SIGNING_PFX_BASE64 }}
+      PIXEL_OVERLAY_SIGNING_PFX_PASSWORD: ${ secrets.PIXELOVERLAY_SIGNING_PFX_PASSWORD }}
+      RELEASE_VERSION_INPUT: ${ github.event.inputs.version }}
+      RELEASE_PRERELEASE_INPUT: ${ github.event.inputs.prerelease }}
+      RELEASE_CHANNEL_INPUT: ${ github.event.inputs.channel }}
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
-      - name: Build signed x64 MSIX package
-        shell: pwsh
-        run: |
-          $out = Join-Path $env:GITHUB_WORKSPACE 'ReleasePackage'
-          if (Test-Path $out) { Remove-Item $out -Recurse -Force }
-          & .\Build-Package.ps1 -Configuration Release -OutputDirectory $out
-          if ($LASTEXITCODE -ne 0) { throw "Build-Package.ps1 failed with exit code $LASTEXITCODE" }
-          Copy-Item .\Install.ps1 -Destination $out
-          Copy-Item .\RELEASE-INSTRUCTIONS.txt -Destination $out
-          $packages = @(Get-ChildItem -Path $out -Recurse -File | Where-Object { $_.Extension -in '.msix', '.appx' })
-          if ($packages.Count -eq 0) { throw 'No MSIX/AppX package was produced.' }
-          $certs = @(Get-ChildItem -Path $out -Recurse -Filter 'PixelOverlay.cer' -File)
-          if ($certs.Count -eq 0) { throw 'The signing certificate was not exported.' }
-          $zip = Join-Path $env:GITHUB_WORKSPACE 'PixelOverlay-v1.0.1-beta.1-windows-x64.zip'
-          if (Test-Path $zip) { Remove-Item $zip -Force }
-          Compress-Archive -Path (Join-Path $out '*') -DestinationPath $zip -CompressionLevel Optimal
-          Write-Host 'Package files:'
-          Get-ChildItem -Path $out -Recurse -File | ForEach-Object { Write-Host $_.FullName }
-          Get-FileHash -Path $zip -Algorithm SHA256 | Format-List
-      - name: Upload installable package artifact
-        uses: actions/upload-artifact@v4
         with:
-          name: PixelOverlay-v1.0.1-beta.1-windows-x64
-          path: PixelOverlay-v1.0.1-beta.1-windows-x64.zip
-          if-no-files-found: error
-          compression-level: 0
-      - name: Publish GitHub prerelease
+          fetch-depth: 0
+
+      - name: Resolve release version and tag
+        id: release
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = 'v1.0.1-beta.1'
-          $title = 'Pixel Overlay v1.0.1 Beta 1'
-          $zip = '.\PixelOverlay-v1.0.1-beta.1-windows-x64.zip'
-          gh release view $tag --json tagName 2>$null | Out-Null
-          $releaseExists = $LASTEXITCODE -eq 0
-          if ($releaseExists) {
-            gh release upload $tag $zip --clobber
-            if ($LASTEXITCODE -ne 0) { throw 'Failed to upload the release asset.' }
-            gh release edit $tag --title $title --notes-file .\RELEASE-NOTES.md --prerelease
+          if ([string]::IsNullOrWhiteSpace($env:PIXEL_OVERLAY_SIGNING_PFX_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:PIXEL_OVERLAY_SIGNING_PFX_PASSWORD)) {
+            throw 'Persistent signing secrets are missing. Run scripts/Initialize-SigningCertificate.ps1 once from a Windows checkout, then start this workflow again.'
+          }
+
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            $version = $env:RELEASE_VERSION_INPUT.Trim()
+            if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+              throw 'Version must contain exactly four numeric parts, for example 1.0.2.0.'
+            }
+            $isPrerelease = $env:RELEASE_PRERELEASE_INPUT -eq 'true'
+            if ($isPrerelease) {
+              $channel = $env:RELEASE_CHANNEL_INPUT.Trim()
+              if ([string]::IsNullOrWhiteSpace($channel) -or $channel -notmatch '^[A-Za-z0-9.-]+$') {
+                throw 'A prerelease channel is required and may contain only letters, numbers, dots and hyphens.'
+              }
+              $tag = "v$version-$channel"
+            }
+            else {
+              $tag = "v$version"
+            }
           }
           else {
-            gh release create $tag $zip --title $title --notes-file .\RELEASE-NOTES.md --prerelease --target $env:GITHUB_SHA
+            $tag = $env:GITHUB_REF_NAME
+            $match = [regex]::Match($tag, '^v(?<version>\d+\.\d+\.\d+\.\d+)(?:-(?<channel>[A-Za-z0-9.-]+))?$')
+            if (!$match.Success) {
+              throw "Invalid release tag '$tag'. Expected v1.2.3.4 or v1.2.3.4-beta.1."
+            }
+            $version = $match.Groups['version'].Value
+            $isPrerelease = $match.Groups['channel'].Success
           }
-          if ($LASTEXITCODE -ne 0) { throw 'GitHub prerelease publication failed.' }
+
+          foreach ($part in $version.Split('.')) {
+            if ([int]$part -gt 65535) { throw "MSIX version component is greater than 65535: $part" }
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "prerelease=$($isPrerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          Write-Host "Release tag: $tag"
+          Write-Host "MSIX version: $version"
+          Write-Host "Prerelease: $isPrerelease"
+
+      - name: Prepare package version
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${ steps.release.outputs.version }}
+        run: |
+          $manifestPath = Join-Path $env:GITHUB_WORKSPACE 'Package.appxmanifest'
+          $xml = New-Object System.Xml.XmlDocument
+          $xml.PreserveWhitespace = $true
+          $xml.Load($manifestPath)
+          $identity = $xml.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Identity']")
+          if (!$identity) { throw 'Package.appxmanifest does not contain Package/Identity.' }
+          $identity.SetAttribute('Version', $env:RELEASE_VERSION)
+          $xml.Save($manifestPath)
+
+      - name: Build signed x64 MSIX package
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${ steps.release.outputs.version }}
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Signing.pfx'
+          $bytes = [Convert]::FromBase64String($env:PIXEL_OVERLAY_SIGNING_PFX_BASE64)
+          [IO.File]::WriteAllBytes($pfxPath, $bytes)
+          [Array]::Clear($bytes, 0, $bytes.Length)
+          $env:PIXEL_OVERLAY_SIGNING_PFX_PATH = $pfxPath
+
+          try {
+            $packageOutput = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Packages'
+            if (Test-Path $packageOutput) { Remove-Item $packageOutput -Recurse -Force }
+            & .\Build-Package.ps1 -Configuration Release -OutputDirectory $packageOutput
+            if ($LASTEXITCODE -ne 0) { throw "Build-Package.ps1 failed with exit code $LASTEXITCODE." }
+
+            $assetDirectory = Join-Path $env:GITHUB_WORKSPACE 'ReleaseAssets'
+            if (Test-Path $assetDirectory) { Remove-Item $assetDirectory -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path $assetDirectory | Out-Null
+
+            $mainPackages = @(Get-ChildItem -Path $packageOutput -Recurse -File |
+              Where-Object { $_.Extension -in '.msix', '.appx' -and $_.FullName -notmatch '[\\/]Dependencies[\\/]' })
+            if ($mainPackages.Count -ne 1) {
+              throw "Expected exactly one main MSIX package outside Dependencies; found $($mainPackages.Count)."
+            }
+
+            $mainName = "PixelOverlay-$env:RELEASE_VERSION-x64.msix"
+            $mainAsset = Join-Path $assetDirectory $mainName
+            Copy-Item -LiteralPath $mainPackages[0].FullName -Destination $mainAsset
+
+            $dependencyDirectories = @(Get-ChildItem -Path $packageOutput -Directory -Recurse |
+              Where-Object { $_.Name -eq 'Dependencies' })
+            $dependencyAssets = @(
+              foreach ($directory in $dependencyDirectories) {
+                $x64 = Join-Path $directory.FullName 'x64'
+                if (Test-Path $x64) {
+                  Get-ChildItem -Path $x64 -File |
+                    Where-Object { $_.Extension -in '.appx', '.msix' }
+                }
+              }
+            )
+            if ($dependencyAssets.Count -eq 0) {
+              throw 'No x64 framework dependency packages were produced. Refusing to publish an incomplete App Installer manifest.'
+            }
+
+            $dependencyPaths = @()
+            foreach ($dependency in $dependencyAssets) {
+              $destination = Join-Path $assetDirectory $dependency.Name
+              Copy-Item -LiteralPath $dependency.FullName -Destination $destination
+              $dependencyPaths += $destination
+            }
+
+            $certificateSource = Join-Path $packageOutput 'PixelOverlay.cer'
+            if (!(Test-Path $certificateSource)) {
+              $certificateSource = Get-ChildItem -Path $packageOutput -Recurse -Filter 'PixelOverlay.cer' -File |
+                Select-Object -First 1 -ExpandProperty FullName
+            }
+            if (!$certificateSource) { throw 'The public signing certificate was not exported.' }
+            Copy-Item -LiteralPath $certificateSource -Destination (Join-Path $assetDirectory 'PixelOverlay.cer') -Force
+
+            $appInstallerPath = Join-Path $assetDirectory 'PixelOverlay.appinstaller'
+            $appInstallerArgs = @{
+              MainPackagePath = $mainAsset
+              DependencyPaths = $dependencyPaths
+              Version = $env:RELEASE_VERSION
+              ReleaseTag = '${ steps.release.outputs.tag }}'
+              RepositoryFullName = 'valenokw2/bobsiwww222zxcv'
+              OutputPath = $appInstallerPath
+            }
+            & .\scripts\Build-AppInstaller.ps1 @appInstallerArgs
+            if ($LASTEXITCODE -ne 0) { throw 'Build-AppInstaller.ps1 failed.' }
+
+            "RELEASE_ASSET_DIRECTORY=$assetDirectory" >> $env:GITHUB_ENV
+            "RELEASE_MAIN_PACKAGE=$mainAsset" >> $env:GITHUB_ENV
+            "RELEASE_APPINSTALLER=$appInstallerPath" >> $env:GITHUB_ENV
+            "RELEASE_CERTIFICATE=$(Join-Path $assetDirectory 'PixelOverlay.cer')" >> $env:GITHUB_ENV
+            "RELEASE_DEPENDENCIES=$($dependencyPaths -join '|')" >> $env:GITHUB_ENV
+          }
+          finally {
+            if (Test-Path $pfxPath) { Remove-Item $pfxPath -Force }
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $programFilesX86 = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)
+          $searchPaths = @(
+            (Join-Path $programFilesX86 'Inno Setup 6'),
+            (Join-Path $env:ProgramFiles 'Inno Setup 6')
+          )
+          $existing = Get-ChildItem -Path $searchPaths -Filter 'ISCC.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (!$existing) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+
+      - name: Build single-file Windows installer
+        shell: pwsh
+        env:
+          PIXEL_OVERLAY_VERSION: ${ steps.release.outputs.version }}
+        run: |
+          $programFilesX86 = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)
+          $searchPaths = @(
+            (Join-Path $programFilesX86 'Inno Setup 6'),
+            (Join-Path $env:ProgramFiles 'Inno Setup 6')
+          )
+          $iscc = Get-ChildItem -Path $searchPaths -Filter 'ISCC.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (!$iscc) { throw 'ISCC.exe was not found after installing Inno Setup.' }
+          & $iscc.FullName ".\installer\PixelOverlay.iss" "/O$env:RELEASE_ASSET_DIRECTORY"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compiler failed with exit code $LASTEXITCODE." }
+
+          $setup = Join-Path $env:RELEASE_ASSET_DIRECTORY 'PixelOverlay-Setup.exe'
+          if (!(Test-Path $setup) -or (Get-Item $setup).Length -lt 100000) {
+            throw 'PixelOverlay-Setup.exe was not created or is unexpectedly small.'
+          }
+          Write-Host "Created installer: $setup"
+          Get-FileHash -Path $setup -Algorithm SHA256 | Format-List
+
+      - name: Publish GitHub release assets
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${ steps.release.outputs.version }}
+          RELEASE_TAG: ${ steps.release.outputs.tag }}
+          RELEASE_PRERELEASE: ${ steps.release.outputs.prerelease }}
+        run: |
+          $assets = @(
+            (Join-Path $env:RELEASE_ASSET_DIRECTORY 'PixelOverlay-Setup.exe'),
+            $env:RELEASE_MAIN_PACKAGE,
+            $env:RELEASE_APPINSTALLER,
+            $env:RELEASE_CERTIFICATE
+          )
+          if (![string]::IsNullOrWhiteSpace($env:RELEASE_DEPENDENCIES)) {
+            $assets += $env:RELEASE_DEPENDENCIES.Split('|')
+          }
+          foreach ($asset in $assets) {
+            if (!(Test-Path -LiteralPath $asset)) { throw "Release asset is missing: $asset" }
+          }
+
+          $notes = (Get-Content -LiteralPath '.\RELEASE-NOTES.md' -Raw).Replace('__VERSION__', $env:RELEASE_VERSION)
+          $notesPath = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Release-Notes.md'
+          [IO.File]::WriteAllText($notesPath, $notes, (New-Object System.Text.UTF8Encoding($false)))
+
+          $title = "Pixel Overlay v$($env:RELEASE_VERSION)"
+          if ($env:RELEASE_PRERELEASE -eq 'true') { $title += ' Beta' }
+
+          $null = gh release view $env:RELEASE_TAG --json tagName 2>$null
+          $releaseExists = $LASTEXITCODE -eq 0
+          if ($releaseExists) {
+            & gh release upload $env:RELEASE_TAG @assets --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Uploading release assets failed.' }
+            if ($env:RELEASE_PRERELEASE -eq 'true') {
+              & gh release edit $env:RELEASE_TAG --title $title --notes-file $notesPath --prerelease
+            }
+            else {
+              & gh release edit $env:RELEASE_TAG --title $title --notes-file $notesPath --latest
+            }
+          }
+          else {
+            $releaseArgs = @('release', 'create', $env:RELEASE_TAG) + $assets + @(
+              '--title', $title, '--notes-file', $notesPath, '--target', $env:GITHUB_SHA
+            )
+            if ($env:RELEASE_PRERELEASE -eq 'true') { $releaseArgs += '--prerelease' }
+            & gh @releaseArgs
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation or update failed.' }
+
+      - name: Publish the stable App Installer manifest
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${ steps.release.outputs.tag }}
+        run: |
+          git fetch origin main
+          git switch --force-create main origin/main
+          Copy-Item -LiteralPath $env:RELEASE_APPINSTALLER -Destination '.\PixelOverlay.appinstaller' -Force
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add PixelOverlay.appinstaller
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "chore(release): update App Installer manifest for $env:RELEASE_TAG"
+            if ($LASTEXITCODE -ne 0) { throw 'Could not commit the App Installer manifest.' }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not publish the stable App Installer manifest to main.' }
+          }
+
+          Write-Host 'Stable update manifest published:'
+          Write-Host 'https://raw.githubusercontent.com/valenokw2/bobsiwww222zxcv/main/PixelOverlay.appinstaller'
