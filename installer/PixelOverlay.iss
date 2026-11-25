@@ -21,7 +21,7 @@ Uninstallable=no
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
-WizardStyle=modern
+WizardStyle=modern dynamic windows11
 Compression=lzma2
 SolidCompression=yes
 OutputBaseFilename=PixelOverlay-Setup
@@ -176,8 +176,8 @@ begin
   GameBarRunning := False;
 
   DetectScript := ExpandConstant('{tmp}\Detect-PixelOverlay.ps1');
-  OutputPath := ExpandConstant('{tmp}\PixelOverlay-Preflight.txt');
-  ErrorPath := ExpandConstant('{tmp}\PixelOverlay-Preflight-Error.txt');
+  OutputPath := ExpandConstant('{localappdata}\PixelOverlay\Preflight-Result.txt');
+  ErrorPath := ExpandConstant('{localappdata}\PixelOverlay\Preflight-Error.txt');
   DeleteFile(OutputPath);
   DeleteFile(ErrorPath);
   ExtractTemporaryFile('Detect-PixelOverlay.ps1');
