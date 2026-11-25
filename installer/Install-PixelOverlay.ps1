@@ -170,6 +170,12 @@ try {
         }
     }
 
+    # App Installer may have applied a newer feed version during update registration.
+    $installed = Get-InstalledPixelOverlay
+    if (!$installed) {
+        throw 'Pixel Overlay could not be found after update-channel registration.'
+    }
+
     $gameBar = Get-AppxPackage -Name 'Microsoft.XboxGamingOverlay' -ErrorAction SilentlyContinue
     if (!$gameBar) {
         Write-SetupLog 'Xbox Game Bar was not found for the current user.'
