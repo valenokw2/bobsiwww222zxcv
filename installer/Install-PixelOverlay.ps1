@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$logDirectory = Join-Path $env:LOCALAPPDATA 'PixelOverlay\\Installer'
+$logDirectory = Join-Path $env:LOCALAPPDATA 'PixelOverlay\Installer'
 $null = New-Item -ItemType Directory -Force -Path $logDirectory
 $logPath = Join-Path $logDirectory 'Setup.log'
 
@@ -45,7 +45,7 @@ try {
     Write-SetupLog "Started action '$Action'. Target version: $TargetVersion."
 
     if ($Action -eq 'Detect') {
-        $windows = Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion'
+        $windows = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
         $build = [int]$windows.CurrentBuildNumber
         if (-not [Environment]::Is64BitOperatingSystem) {
             throw 'Pixel Overlay requires 64-bit Windows.'
@@ -104,7 +104,7 @@ try {
         throw 'The embedded publisher certificate thumbprint does not match the expected Pixel Overlay signing certificate.'
     }
 
-    $trusted = Get-ChildItem 'Cert:\\LocalMachine\\TrustedPeople' |
+    $trusted = Get-ChildItem 'Cert:\LocalMachine\TrustedPeople' |
         Where-Object { $_.Thumbprint -eq $certificate.Thumbprint } |
         Select-Object -First 1
     if (!$trusted) {
@@ -186,7 +186,6 @@ try {
 catch {
     $message = $_.Exception.Message
     Write-SetupLog ("FAILED: " + $message)
-    Write-Error $message
     Write-Output "PIXEL_SETUP_FAILURE|$message"
     exit 1
 }
