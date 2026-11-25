@@ -20,6 +20,9 @@ A single-file Windows installer bundles the signed app package, all required x64
 - Image library and persistent selection.
 - Opacity, zoom, position and rotation controls.
 - Animated GIF playback in the overlay.
+- Still images are decoded at a bounded resolution to reduce memory use.
+- GIF imports are limited to 8 megapixels because animated playback requires several in-memory frame buffers.
+- Runtime exception details are written to the app's LocalState file `pixel-overlay-diagnostics.log` when the process can report them.
 - Proportional image fitting as the Game Bar widget is resized.
 
 ## Known limitations
