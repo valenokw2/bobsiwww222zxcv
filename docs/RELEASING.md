@@ -11,7 +11,7 @@ gh auth login
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Initialize-SigningCertificate.ps1
 \`\`\`
 
-The script creates or reuses a five-year Code Signing certificate in the current user's certificate store, exports a temporary PFX, uploads two repository Actions secrets, and deletes the temporary PFX:
+The script creates or reuses a five-year Code Signing certificate in the current user's certificate store, exports a temporary PFX, uploads two repository Actions secrets, and deletes the temporary PFX. The release Setup imports the matching public certificate into Local Computer > Trusted People (never Trusted Root), because App Installer checks the machine certificate store:
 - PIXELOVERLAY_SIGNING_PFX_BASE64
 - PIXELOVERLAY_SIGNING_PFX_PASSWORD
 
@@ -26,13 +26,13 @@ Alternatively, push a tag in the format v1.2.3.4 or v1.2.3.4-beta.1. The four-pa
 - v1.0.2.1-beta.2
 - v1.0.3.0
 
-The release workflow builds and signs x64 MSIX, discovers and publishes its x64 framework dependencies, generates the .appinstaller document, compiles PixelOverlay-Setup.exe, publishes a GitHub Release, and updates PixelOverlay.appinstaller on main.
+The release workflow builds and signs x64 MSIX, discovers and publishes its x64 framework dependencies, generates the .appinstaller document, compiles PixelOverlay-Setup.exe, publishes a versioned GitHub Release, then creates or updates the fixed update-channel Release asset. The feed is deliberately kept separate from versioned releases so installed clients always use one URL.
 
 ## Update channel
 
 The App Installer document is served from the stable URL:
 
-https://raw.githubusercontent.com/valenokw2/bobsiwww222zxcv/main/PixelOverlay.appinstaller
+https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller
 
 The manifest's main package and dependency URIs point to the exact assets for the current release. OnLaunch checks are configured for 12-hour intervals, and AutomaticBackgroundTask enables Windows background update checks. Keep the stable manifest URL and package Publisher unchanged.
 
