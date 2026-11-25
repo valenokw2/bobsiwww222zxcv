@@ -25,9 +25,7 @@ namespace PixelOverlayInstaller
     {
         internal const string AppVersion = "__APP_VERSION__";
         internal const string AppInstallerUri = "__APP_INSTALLER_URI__";
-        // Windows/MSBuild still uses the legacy certificate-store thumbprint for lookup.
         // Trust decisions are pinned to the SHA-256 digest of the complete DER certificate.
-        internal const string CertificateThumbprint = "A68A682C3193352F350F0FC6D7A5F8990863E150";
         internal const string CertificateSha256 = "65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F";
 
         internal static bool IsExpectedPublisherCertificate(X509Certificate2 certificate)
@@ -67,8 +65,17 @@ namespace PixelOverlayInstaller
                 {
                     store.Open(OpenFlags.ReadWrite);
                     X509Certificate2Collection found = store.Certificates.Find(
-                        X509FindType.FindByThumbprint, CertificateThumbprint, false);
-                    if (found.Count == 0)
+                        X509FindType.FindBySubjectName, "PixelOverlayDeveloper", false);
+                    bool alreadyTrusted = false;
+                    foreach (X509Certificate2 existing in found)
+                    {
+                        if (IsExpectedPublisherCertificate(existing))
+                        {
+                            alreadyTrusted = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyTrusted)
                         store.Add(certificate);
                 }
                 return 0;
@@ -288,6 +295,9 @@ __PAYLOAD_SHA256_ENTRIES__
             for (int attempt = 0; attempt < 5; attempt++)
             {
                 string path = Path.Combine(root, "Staging-" + Guid.NewGuid().ToString("N"));
+                if (Directory.Exists(path) || File.Exists(path))
+                    continue;
+
                 DirectorySecurity security = new DirectorySecurity();
                 security.SetAccessRuleProtection(true, false);
                 security.SetOwner(currentUser);
@@ -298,10 +308,16 @@ __PAYLOAD_SHA256_ENTRIES__
                 try
                 {
                     DirectoryInfo directory = Directory.CreateDirectory(path, security);
-                    if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
+                    DirectorySecurity appliedSecurity = directory.GetAccessControl();
+                    bool ownerIsCurrentUser = currentUser.Equals(appliedSecurity.GetOwner(typeof(SecurityIdentifier)));
+                    AuthorizationRuleCollection accessRules = appliedSecurity.GetAccessRules(true, true, typeof(SecurityIdentifier));
+                    if ((directory.Attributes & FileAttributes.ReparsePoint) != 0 ||
+                        !appliedSecurity.AreAccessRulesProtected ||
+                        !ownerIsCurrentUser ||
+                        accessRules.Count != 3)
                     {
                         try { directory.Delete(true); } catch { }
-                        throw new InvalidOperationException("The private installer staging directory unexpectedly resolved to a reparse point.");
+                        throw new InvalidOperationException("The installer staging directory ACL or filesystem type failed its security check.");
                     }
                     return directory.FullName;
                 }
@@ -630,8 +646,12 @@ __PAYLOAD_SHA256_ENTRIES__
             {
                 store.Open(OpenFlags.ReadOnly);
                 X509Certificate2Collection found = store.Certificates.Find(
-                    X509FindType.FindByThumbprint, Program.CertificateThumbprint, false);
-                if (found.Count > 0) return;
+                    X509FindType.FindBySubjectName, "PixelOverlayDeveloper", false);
+                foreach (X509Certificate2 existing in found)
+                {
+                    if (Program.IsExpectedPublisherCertificate(existing))
+                        return;
+                }
             }
 
             ProcessStartInfo start = new ProcessStartInfo();
