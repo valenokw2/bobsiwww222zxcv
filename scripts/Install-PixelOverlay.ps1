@@ -2,8 +2,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$CertificatePath,
-    [switch]$TrustCertificateOnly,
-    [string]$VolumePath
+    [switch]$TrustCertificateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -144,43 +143,9 @@ try {
 
     Set-InstallerProgress -Percent 40 -Status 'Starting Windows App Installer...'
 
-    if ($installedPackage) {
-        $installedVolume = $null
-        $installedLocation = [string]$installedPackage.InstallLocation
-        foreach ($candidateVolume in @(Get-AppxVolume | Where-Object { !$_.IsOffline })) {
-            $candidatePath = [string]$candidateVolume.PackageStorePath
-            $normalizedCandidatePath = $candidatePath.TrimEnd([char]92) + [char]92
-            if (![string]::IsNullOrWhiteSpace($candidatePath) -and
-                $installedLocation.StartsWith($normalizedCandidatePath, [StringComparison]::OrdinalIgnoreCase)) {
-                $installedVolume = $candidateVolume
-                break
-            }
-        }
-
-        if ($installedVolume) {
-            Write-Host "Keeping the existing Windows-managed package volume: $($installedVolume.PackageStorePath)"
-            Add-AppxPackage -Path $manifestPath -AppInstallerFile -Volume $installedVolume -ErrorAction Stop
-        }
-        else {
-            Write-Warning 'The existing package volume could not be identified. Windows will use its normal update location.'
-            Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
-        }
-    }
-    elseif (![string]::IsNullOrWhiteSpace($VolumePath)) {
-        $volume = Get-AppxVolume | Where-Object {
-            $_.PackageStorePath -eq $VolumePath -and !$_.IsOffline
-        } | Select-Object -First 1
-
-        if (!$volume) {
-            throw "The selected Windows app package volume is no longer available: $VolumePath"
-        }
-
-        Write-Host "Selected Windows-managed package volume: $($volume.PackageStorePath)"
-        Add-AppxPackage -Path $manifestPath -AppInstallerFile -Volume $volume -ErrorAction Stop
-    }
-    else {
-        Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
-    }
+    # AppInstallerFile uses the Windows default package volume. The AppX PowerShell
+    # parameter set does not expose -Volume together with -AppInstallerFile.
+    Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
 
     Set-InstallerProgress -Percent 90 -Status 'Verifying the installed package...'
     $installedPackage = Get-AppxPackage -Name 'PixelOverlay' |
