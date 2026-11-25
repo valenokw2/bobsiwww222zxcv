@@ -40,11 +40,25 @@ try {
         throw 'The included signing certificate has expired.'
     }
 
-    $hasCodeSigningEku = @($certificate.EnhancedKeyUsageList | Where-Object {
-        $_.ObjectId.Value -eq '1.3.6.1.5.5.7.3.3'
-    }).Count -gt 0
+    # This is a raw X509Certificate2, not a Cert:\ provider object.
+    # Read the EKU extension directly instead of relying on EnhancedKeyUsageList.
+    $ekuExtension = $certificate.Extensions |
+        Where-Object { $_.Oid.Value -eq '2.5.29.37' } |
+        Select-Object -First 1
+
+    $hasCodeSigningEku = $false
+    if ($ekuExtension) {
+        $parsedEku = [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new(
+            $ekuExtension,
+            $ekuExtension.Critical
+        )
+        $hasCodeSigningEku = @($parsedEku.EnhancedKeyUsages | Where-Object {
+            $_.Value -eq '1.3.6.1.5.5.7.3.3'
+        }).Count -gt 0
+    }
+
     if (!$hasCodeSigningEku) {
-        throw 'The included certificate is not a Code Signing certificate.'
+        throw 'The included certificate is not a Code Signing certificate (OID 1.3.6.1.5.5.7.3.3).'
     }
 
     $trustedCertificate = Get-ChildItem Cert:\LocalMachine\TrustedPeople |
