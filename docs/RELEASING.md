@@ -21,6 +21,12 @@ The GitHub account must have permission to manage Actions secrets. Only the publ
 
 Open GitHub Actions → Pixel Overlay Release → Run workflow. Enter a four-part numeric MSIX version such as 1.0.2.0. For a beta release, keep prerelease enabled and use a channel such as beta.1.
 
+Or start the same workflow from PowerShell after the secrets have been uploaded:
+
+```powershell
+gh workflow run windows-build.yml --repo valenokw2/bobsiwww222zxcv --ref main -f version=1.0.2.0 -f prerelease=true -f channel=beta.1
+```
+
 Alternatively, push a tag in the format v1.2.3.4 or v1.2.3.4-beta.1. The four-part numeric portion becomes the package version and must always increase. For example:
 - v1.0.2.0-beta.1
 - v1.0.2.1-beta.2
@@ -30,7 +36,7 @@ The release workflow builds and signs x64 MSIX, discovers and publishes its x64 
 
 ## Update channel
 
-The App Installer document is served from the stable URL:
+The App Installer document is served from the stable fixed GitHub Release asset URL:
 
 https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller
 
