@@ -43,6 +43,7 @@ namespace PixelOverlay.Views
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
+            if (_subscription != null) return;
             _cleaned = false;
             try
             {
@@ -80,6 +81,7 @@ namespace PixelOverlay.Views
             if (_viewProfiles != null) _viewProfiles.CollectionChanged -= ViewCollections_CollectionChanged;
             _previewLoadGeneration++;
             _dragging = false;
+            PreviewImage.Source = null;
         }
 
         private void ApplyStoreSnapshot(PersistedSettings snapshot)
@@ -244,7 +246,9 @@ namespace PixelOverlay.Views
                 {
                     _viewLibrary.Insert(0, item);
                     _selected = item;
-                    LibraryList.SelectedItem = item;
+                    _restoringSelection = true;
+                    try { LibraryList.SelectedItem = item; }
+                    finally { _restoringSelection = false; }
                     _viewState.SelectedImageId = item.Id;
                 }
                 finally

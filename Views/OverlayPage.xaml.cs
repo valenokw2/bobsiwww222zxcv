@@ -33,6 +33,7 @@ namespace PixelOverlay.Views
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
+            if (_subscription != null) return;
             _cleaned = false;
             try
             {
