@@ -49,7 +49,7 @@ Requirements
 - Internet access during setup if automatic update registration is to be enabled immediately.
 
 Security and reputation
-This beta is signed with a persistent self-signed Code Signing certificate. The installer imports the matching public certificate into Local Computer > Trusted People after one UAC approval; it does not add the certificate to Trusted Root. SmartScreen may still show an unrecognized-app warning because the certificate is self-signed and the installer has no Microsoft Store reputation. Only run releases downloaded from the official repository:
+This release is signed with a persistent self-signed Code Signing certificate. The installer imports the matching public certificate into Local Computer > Trusted People after one UAC approval; it does not add the certificate to Trusted Root. SmartScreen may still show an unrecognized-app warning because the certificate is self-signed and the installer has no Microsoft Store reputation. Only run releases downloaded from the official repository:
 https://github.com/valenokw2/bobsiwww222zxcv/releases
 
 Uninstall
