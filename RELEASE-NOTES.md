@@ -1,19 +1,14 @@
 # Pixel Overlay v__VERSION__
 
-This release introduces a single-file Windows setup program and the first persistent update channel.
+This release is installed and updated through Windows App Installer. No separate setup executable is required.
 
 ## Installation and updates
-- PixelOverlay-Setup.exe built with Inno Setup.
-- Automatically checks Windows version, x64 architecture, installed version and the latest update channel.
-- Distinguishes fresh installs, available updates, already-current installs and newer installed versions; it never downgrades the app.
-- Shows an animated progress bar while Windows registers the signed package.
-- Shows the Windows-managed package location; Windows App Installer deploys to the configured default app package volume.
-- Installs the publisher certificate into Local Computer > Trusted People after UAC approval; the app package remains per-user.
-- Installs the signed MSIX package and its x64 framework dependencies through Windows App Installer.
-- Verifies the installed package version after deployment and warns when Xbox Game Bar is missing or already running.
-- Registers a stable .appinstaller update URI hosted as a fixed GitHub Release asset.
-- Enables on-launch update checks and Windows background update checks.
-- Uses a persistent Code Signing certificate imported from GitHub Actions Secrets; the private key is not stored in the repository.
+- Open the stable [PixelOverlay.appinstaller](https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller) link to install or update Pixel Overlay.
+- Windows App Installer downloads and registers the signed MSIX package and its required x64 framework dependencies.
+- A stable .appinstaller update URI is registered for on-launch and Windows background update checks.
+- The public publisher certificate (PixelOverlay.cer) is included for first-time certificate trust when Windows requires it.
+- Windows manages the protected MSIX package location and the configured default app package volume.
+- The package is signed using a persistent Code Signing certificate managed through GitHub Actions Secrets; the private key is not stored in the repository.
 
 ## Application functionality
 - Import PNG, JPG, JPEG and GIF images through the settings widget.
@@ -25,7 +20,7 @@ This release introduces a single-file Windows setup program and the first persis
 
 ## Known limitations
 - Beta sideload build, not a Microsoft Store release.
-- The package publisher certificate is self-signed; Windows SmartScreen may still warn about the installer.
+- The package publisher certificate is self-signed; Windows may require a one-time certificate trust step.
 - Settings preview displays the first GIF frame; animated playback is in the overlay.
 - Position offsets are in device-independent pixels, not normalized percentages of the widget size.
 - Runtime behavior inside the actual Game Bar host still requires hands-on validation on supported Windows systems.
