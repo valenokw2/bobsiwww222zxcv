@@ -17,12 +17,21 @@ namespace PixelOverlay.Models
         [DataMember] private bool _gifPlaying = true;
 
         public string SelectedImageId { get => _selectedImageId; set { if (Set(ref _selectedImageId, value)) Changed(); } }
-        public double Opacity { get => _opacity; set { if (Set(ref _opacity, Math.Max(0, Math.Min(100, value)))) { Raise(nameof(OpacityText)); Changed(); } } }
-        public double Scale { get => _scale; set { if (Set(ref _scale, Math.Max(10, Math.Min(500, value)))) { Raise(nameof(ScaleText)); Changed(); } } }
-        public double PositionX { get => _positionX; set { if (Set(ref _positionX, value)) Changed(); } }
-        public double PositionY { get => _positionY; set { if (Set(ref _positionY, value)) Changed(); } }
-        public double Rotation { get => _rotation; set { if (Set(ref _rotation, value % 360 + (value < 0 ? 360 : 0))) { Raise(nameof(RotationText)); Changed(); } } }
-        public double GifSpeed { get => _gifSpeed; set { if (Set(ref _gifSpeed, Math.Max(.25, Math.Min(4, value)))) { Raise(nameof(GifSpeedText)); Changed(); } } }
+        public double Opacity { get => _opacity; set { if (Set(ref _opacity, ClampFinite(value, 0, 100, _opacity))) { Raise(nameof(OpacityText)); Changed(); } } }
+        public double Scale { get => _scale; set { if (Set(ref _scale, ClampFinite(value, 10, 500, _scale))) { Raise(nameof(ScaleText)); Changed(); } } }
+        public double PositionX { get => _positionX; set { if (Set(ref _positionX, ClampFinite(value, -100000, 100000, _positionX))) Changed(); } }
+        public double PositionY { get => _positionY; set { if (Set(ref _positionY, ClampFinite(value, -100000, 100000, _positionY))) Changed(); } }
+        public double Rotation
+        {
+            get => _rotation;
+            set
+            {
+                var normalized = ClampFinite(value, -1000000, 1000000, _rotation) % 360d;
+                if (normalized < 0) normalized += 360d;
+                if (Set(ref _rotation, normalized)) { Raise(nameof(RotationText)); Changed(); }
+            }
+        }
+        public double GifSpeed { get => _gifSpeed; set { if (Set(ref _gifSpeed, ClampFinite(value, .25, 4, _gifSpeed))) { Raise(nameof(GifSpeedText)); Changed(); } } }
         public bool GifPlaying { get => _gifPlaying; set { if (Set(ref _gifPlaying, value)) Changed(); } }
         public string OpacityText => Opacity.ToString("0") + "%";
         public string ScaleText => Scale.ToString("0") + "%";
@@ -30,6 +39,12 @@ namespace PixelOverlay.Models
         public string GifSpeedText => GifSpeed.ToString("0.00") + "×";
 
         private int _suspendNotifications;
+
+        private static double ClampFinite(double value, double minimum, double maximum, double fallback)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value)) return fallback;
+            return Math.Max(minimum, Math.Min(maximum, value));
+        }
 
         public void ResetTransform() { Opacity = 100; Scale = 100; PositionX = 0; PositionY = 0; Rotation = 0; }
         public void Center() { PositionX = 0; PositionY = 0; }
