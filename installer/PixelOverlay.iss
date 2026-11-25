@@ -111,40 +111,33 @@ end;
 
 function ReadPreflightFile(const FileName: String): Boolean;
 var
-  Lines: TStringList;
+  Lines: TArrayOfString;
   I: Integer;
   Line: String;
-  Data: String;
 begin
   Result := False;
-  Lines := TStringList.Create;
-  try
-    if not LoadStringFromFile(FileName, Data) then
-      Exit;
+  if not LoadStringsFromFile(FileName, Lines) then
+    Exit;
 
-    Lines.Text := Data;
-    for I := 0 to Lines.Count - 1 do
-    begin
-      Line := Lines[I];
-      if Pos('Mode=', Line) = 1 then
-        DetectedMode := Copy(Line, 6, MaxInt)
-      else if Pos('InstalledVersion=', Line) = 1 then
-        InstalledVersion := Copy(Line, 18, MaxInt)
-      else if Pos('AvailableVersion=', Line) = 1 then
-        AvailableVersion := Copy(Line, 18, MaxInt)
-      else if Pos('InstalledLocation=', Line) = 1 then
-        InstalledLocation := Copy(Line, 19, MaxInt)
-      else if Pos('DefaultVolumePath=', Line) = 1 then
-        DefaultVolumePath := Copy(Line, 19, MaxInt)
-      else if Pos('GameBarRunning=', Line) = 1 then
-        GameBarRunning := Copy(Line, 16, MaxInt) = '1';
-    end;
-
-    Result := (DetectedMode <> '') and (AvailableVersion <> '') and
-      (DefaultVolumePath <> '');
-  finally
-    Lines.Free;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Line := Lines[I];
+    if Pos('Mode=', Line) = 1 then
+      DetectedMode := Copy(Line, 6, MaxInt)
+    else if Pos('InstalledVersion=', Line) = 1 then
+      InstalledVersion := Copy(Line, 18, MaxInt)
+    else if Pos('AvailableVersion=', Line) = 1 then
+      AvailableVersion := Copy(Line, 18, MaxInt)
+    else if Pos('InstalledLocation=', Line) = 1 then
+      InstalledLocation := Copy(Line, 19, MaxInt)
+    else if Pos('DefaultVolumePath=', Line) = 1 then
+      DefaultVolumePath := Copy(Line, 19, MaxInt)
+    else if Pos('GameBarRunning=', Line) = 1 then
+      GameBarRunning := Copy(Line, 16, MaxInt) = '1';
   end;
+
+  Result := (DetectedMode <> '') and (AvailableVersion <> '') and
+    (DefaultVolumePath <> '');
 end;
 
 procedure RunPreflight;
