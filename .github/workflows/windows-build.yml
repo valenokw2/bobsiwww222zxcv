@@ -279,20 +279,32 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          git fetch origin main
-          git switch --force-create main origin/main
-          Copy-Item -LiteralPath $env:RELEASE_APPINSTALLER -Destination '.\PixelOverlay.appinstaller' -Force
+          $feedTag = 'update-channel'
+          $feedNotes = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Update-Channel.md'
+          $feedNoteText = @"
+          Stable App Installer update channel for Pixel Overlay.
 
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add PixelOverlay.appinstaller
-          git diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
-            git commit -m "chore(release): update App Installer manifest for $env:RELEASE_TAG"
-            if ($LASTEXITCODE -ne 0) { throw 'Could not commit the App Installer manifest.' }
-            git push origin HEAD:main
-            if ($LASTEXITCODE -ne 0) { throw 'Could not publish the stable App Installer manifest to main.' }
+          This fixed asset URL is consumed by already-installed clients:
+          https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller
+
+          Current application release: $env:RELEASE_TAG
+          "@
+          [IO.File]::WriteAllText($feedNotes, $feedNoteText, (New-Object System.Text.UTF8Encoding($false)))
+
+          $null = gh release view $feedTag --json tagName 2>$null
+          $feedExists = $LASTEXITCODE -eq 0
+
+          if ($feedExists) {
+            & gh release upload $feedTag $env:RELEASE_APPINSTALLER --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Could not update the stable App Installer feed asset.' }
+            & gh release edit $feedTag --title 'Pixel Overlay Update Channel' --notes-file $feedNotes --latest=false
+            if ($LASTEXITCODE -ne 0) { throw 'Could not update the stable App Installer feed release.' }
+          }
+          else {
+            $feedArgs = @('release', 'create', $feedTag, $env:RELEASE_APPINSTALLER, '--title', 'Pixel Overlay Update Channel', '--notes-file', $feedNotes, '--target', $env:GITHUB_SHA, '--latest=false')
+            & gh @feedArgs
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the stable App Installer feed release.' }
           }
 
           Write-Host 'Stable update manifest published:'
-          Write-Host 'https://raw.githubusercontent.com/valenokw2/bobsiwww222zxcv/main/PixelOverlay.appinstaller'
+          Write-Host 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller'
