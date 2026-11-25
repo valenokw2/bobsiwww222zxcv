@@ -291,14 +291,29 @@ jobs:
           }
 
           $signingCertificate = Get-ChildItem Cert:\CurrentUser\My |
-            Where-Object { $_.Thumbprint -eq 'A68A682C3193352F350F0FC6D7A5F8990863E150' } |
+            Where-Object { $_.Subject -eq 'CN=PixelOverlayDeveloper' -and $_.HasPrivateKey } |
+            Where-Object {
+              $sha256 = [System.Security.Cryptography.SHA256]::Create()
+              try {
+                $fingerprint = [BitConverter]::ToString($sha256.ComputeHash($_.RawData)).Replace('-', '')
+              }
+              finally { $sha256.Dispose() }
+              $fingerprint -eq '65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F'
+            } |
             Select-Object -First 1
           if (!$signingCertificate -or !$signingCertificate.HasPrivateKey) {
             throw 'The persistent Pixel Overlay signing certificate with its private key was not available to sign the setup executable.'
           }
           $setupSignature = Set-AuthenticodeSignature -FilePath $setupPath -Certificate $signingCertificate -HashAlgorithm SHA256
-          if (!$setupSignature.SignerCertificate -or $setupSignature.SignerCertificate.Thumbprint -ne $signingCertificate.Thumbprint) {
-            throw 'The single-file setup executable could not be signed with the Pixel Overlay publisher certificate.'
+          $setupSigner = $setupSignature.SignerCertificate
+          if (!$setupSigner -or $setupSigner.Subject -ne 'CN=PixelOverlayDeveloper') {
+            throw 'The single-file setup executable has no expected Pixel Overlay Authenticode signer.'
+          }
+          $signerHash = [System.Security.Cryptography.SHA256]::Create()
+          try { $signerSha256 = [BitConverter]::ToString($signerHash.ComputeHash($setupSigner.RawData)).Replace('-', '') }
+          finally { $signerHash.Dispose() }
+          if ($signerSha256 -ne '65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F') {
+            throw 'The single-file setup executable was not signed by the pinned Pixel Overlay SHA-256 certificate.'
           }
 
           $setupAssembly = [Reflection.Assembly]::LoadFile($setupPath)
