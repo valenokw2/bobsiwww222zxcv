@@ -38,6 +38,19 @@ Source: "..\ReleaseAssets\PixelOverlay.cer"; Flags: dontcopy
 const
   WAIT_OBJECT_0 = $00000000;
   WAIT_TIMEOUT = $00000102;
+  PM_REMOVE = 1;
+  WM_QUIT = $0012;
+
+type
+  TMsg = record
+    hwnd: LongWord;
+    message: LongWord;
+    wParam: LongWord;
+    lParam: LongInt;
+    time: LongWord;
+    ptX: LongInt;
+    ptY: LongInt;
+  end;
 
 var
   StatusPage: TOutputMsgWizardPage;
@@ -62,6 +75,27 @@ function CloseHandle(hObject: LongWord): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
 procedure Sleep(dwMilliseconds: LongWord);
   external 'Sleep@kernel32.dll stdcall';
+function PeekMessage(var lpMsg: TMsg; hWnd: LongWord; wMsgFilterMin, wMsgFilterMax, wRemoveMsg: LongWord): Boolean;
+  external 'PeekMessageA@user32.dll stdcall';
+function TranslateMessage(const lpMsg: TMsg): Boolean;
+  external 'TranslateMessage@user32.dll stdcall';
+function DispatchMessage(const lpMsg: TMsg): LongInt;
+  external 'DispatchMessageA@user32.dll stdcall';
+
+procedure PumpWizardMessages;
+var
+  Msg: TMsg;
+begin
+  while PeekMessage(Msg, 0, 0, 0, PM_REMOVE) do
+  begin
+    if Msg.message <> WM_QUIT then
+    begin
+      TranslateMessage(Msg);
+      DispatchMessage(Msg);
+    end;
+  end;
+  WizardForm.Refresh;
+end;
 
 function RunPowerShell(const Parameters: String; const AsOriginalUser: Boolean;
   const Wait: TExecWait; var ResultCode: Integer): Boolean;
@@ -249,7 +283,7 @@ begin
   try
     repeat
       WaitResult := WaitForSingleObject(ProcessHandle, 200);
-      WizardForm.Update;
+      PumpWizardMessages;
       if WaitResult = WAIT_OBJECT_0 then
         Break;
       if WaitResult <> WAIT_TIMEOUT then
