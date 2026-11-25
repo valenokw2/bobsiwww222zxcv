@@ -12,7 +12,7 @@ if ([System.IO.Path]::GetExtension($package).ToLowerInvariant() -notin @('.msix'
 
 if ($CertificatePath -and (Test-Path $CertificatePath)) {
     $certificate = (Resolve-Path $CertificatePath).Path
-    $certificateInfo = Get-PfxCertificate -FilePath $certificate
+    $certificateInfo = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certificate)
     if ($certificateInfo.Subject -ne 'CN=PixelOverlayDeveloper') {
         throw "Unexpected signing certificate subject: $($certificateInfo.Subject)"
     }
@@ -22,14 +22,20 @@ else {
     throw 'PixelOverlay.cer was not found. Keep the certificate beside Install.ps1 or pass -CertificatePath.'
 }
 
-# Install x64 framework dependencies packaged by the UWP build, if any.
-$dependencyRoot = Join-Path $PSScriptRoot 'Dependencies'
-$dependencies = @()
-if (Test-Path $dependencyRoot) {
-    $dependencies = @(Get-ChildItem -Path $dependencyRoot -Recurse -File |
-        Where-Object { $_.Extension -in '.appx', '.msix' -and $_.FullName -match '[\\/]x64[\\/]' } |
-        Select-Object -ExpandProperty FullName)
-}
+# The UWP packaging target nests Dependencies under its generated *_Test folder.
+# Search the extracted release tree and include only x64 framework packages.
+$dependencyDirectories = @(Get-ChildItem -Path $PSScriptRoot -Directory -Recurse |
+    Where-Object { $_.Name -eq 'Dependencies' })
+$dependencies = @(
+    foreach ($dependencyDirectory in $dependencyDirectories) {
+        $x64Directory = Join-Path $dependencyDirectory.FullName 'x64'
+        if (Test-Path $x64Directory) {
+            Get-ChildItem -Path $x64Directory -File |
+                Where-Object { $_.Extension -in '.appx', '.msix' } |
+                Select-Object -ExpandProperty FullName
+        }
+    }
+)
 
 if ($dependencies.Count -gt 0) {
     Add-AppxPackage -Path $package -DependencyPath $dependencies
