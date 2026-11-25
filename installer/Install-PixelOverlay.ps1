@@ -87,7 +87,10 @@ function Get-DependenciesToInstall {
     foreach ($path in $DependencyPaths) {
         $identity = Get-AppxFileIdentity -Path $path
         $installed = Get-AppxPackage -Name $identity.Name -ErrorAction SilentlyContinue |
-            Where-Object { $_.Publisher -eq $identity.Publisher } |
+            Where-Object {
+                $_.Publisher -eq $identity.Publisher -and
+                ([string]$_.Architecture -ieq [string]$identity.Architecture)
+            } |
             Sort-Object { [version]$_.Version } -Descending |
             Select-Object -First 1
 
@@ -153,19 +156,21 @@ try {
     if (!(Test-Path -LiteralPath $mainPackage)) { throw 'The embedded Pixel Overlay MSIX package is missing.' }
     if (!(Test-Path -LiteralPath $certificatePath)) { throw 'The embedded publisher certificate is missing.' }
 
-    $dependencyPaths = @(
-        (Join-Path $PayloadDirectory 'Microsoft.NET.CoreFramework.Debug.2.2.appx'),
-        (Join-Path $PayloadDirectory 'Microsoft.NET.CoreRuntime.2.2.appx'),
-        (Join-Path $PayloadDirectory 'Microsoft.VCLibs.x64.14.00.appx')
-    )
-    foreach ($dependency in $dependencyPaths) {
-        if (!(Test-Path -LiteralPath $dependency)) {
-            throw "A required framework dependency is missing: $(Split-Path -Leaf $dependency)"
-        }
+    $dependencyDirectory = Join-Path $PayloadDirectory 'Dependencies'
+    $dependencyPaths = @()
+    if (Test-Path -LiteralPath $dependencyDirectory) {
+        $dependencyPaths = @(Get-ChildItem -LiteralPath $dependencyDirectory -File |
+            Where-Object { $_.Extension -in '.appx', '.msix' } |
+            Sort-Object Name |
+            Select-Object -ExpandProperty FullName)
     }
+    if ($dependencyPaths.Count -eq 0) {
+        throw 'The installer does not contain the framework dependencies produced for this package.'
+    }
+
     $dependenciesToInstall = @(Get-DependenciesToInstall -DependencyPaths $dependencyPaths)
     Write-SetupLog ("Dependencies supplied by setup: {0}; already satisfied: {1}" -f
-        $dependenciesToInstall.Count, ($dependencyPaths.Count - $dependenciesToInstall.Count))
+        $dependencyPaths.Count, ($dependencyPaths.Count - $dependenciesToInstall.Count))
 
     Send-SetupProgress 12 'Verifying the publisher certificate...'
     $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
@@ -235,38 +240,40 @@ try {
     }
 
     $updateWarning = ''
-    Send-SetupProgress 88 'Connecting the automatic update channel...'
-    $manifestPath = Join-Path $env:TEMP ("PixelOverlay-Update-" + [guid]::NewGuid().ToString('N') + '.appinstaller')
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $AppInstallerUri -OutFile $manifestPath -UseBasicParsing -MaximumRedirection 10 -TimeoutSec 30 -Headers @{ 'User-Agent' = 'PixelOverlay-Setup' }
-
-        [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
-        if (!$manifest.DocumentElement -or $manifest.DocumentElement.LocalName -ne 'AppInstaller') {
-            throw 'The downloaded update manifest is invalid.'
-        }
-        if ($manifest.DocumentElement.GetAttribute('Uri') -ne $AppInstallerUri) {
-            throw 'The update manifest does not match the official Pixel Overlay update channel.'
-        }
-        $remoteMain = $manifest.SelectSingleNode("/*[local-name()='AppInstaller']/*[local-name()='MainPackage']")
-        if (!$remoteMain -or $remoteMain.GetAttribute('Name') -ne 'PixelOverlay' -or
-            $remoteMain.GetAttribute('Publisher') -ne 'CN=PixelOverlayDeveloper') {
-            throw 'The update manifest package identity is not Pixel Overlay.'
-        }
-
-        # Register the remote App Installer source after the offline payload has
-        # installed the same package locally. Windows sees the current version
-        # and only records the update source unless a newer release is available.
-        Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
-        Write-SetupLog 'The stable App Installer update source was registered successfully.'
+    if ([string]::IsNullOrWhiteSpace($AppInstallerUri)) {
+        Write-SetupLog 'This is a prerelease build; stable automatic update registration was skipped.'
     }
-    catch {
-        $updateWarning = 'The app was installed, but automatic update registration could not be completed. Open the official App Installer link once while online to enable updates. Details: ' + $_.Exception.Message
-        Write-SetupLog ("Update registration warning: " + $_.Exception.Message)
-    }
-    finally {
-        if (Test-Path -LiteralPath $manifestPath) {
-            Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
+    else {
+        Send-SetupProgress 88 'Connecting the automatic update channel...'
+        $manifestPath = Join-Path $env:TEMP ("PixelOverlay-Update-" + [guid]::NewGuid().ToString('N') + '.appinstaller')
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $AppInstallerUri -OutFile $manifestPath -UseBasicParsing -MaximumRedirection 10 -TimeoutSec 30 -Headers @{ 'User-Agent' = 'PixelOverlay-Setup' }
+
+            [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
+            if (!$manifest.DocumentElement -or $manifest.DocumentElement.LocalName -ne 'AppInstaller') {
+                throw 'The downloaded update manifest is invalid.'
+            }
+            if ($manifest.DocumentElement.GetAttribute('Uri') -ne $AppInstallerUri) {
+                throw 'The update manifest does not match the configured Pixel Overlay update channel.'
+            }
+            $remoteMain = $manifest.SelectSingleNode("/*[local-name()='AppInstaller']/*[local-name()='MainPackage']")
+            if (!$remoteMain -or $remoteMain.GetAttribute('Name') -ne 'PixelOverlay' -or
+                $remoteMain.GetAttribute('Publisher') -ne 'CN=PixelOverlayDeveloper') {
+                throw 'The update manifest package identity is not Pixel Overlay.'
+            }
+
+            Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
+            Write-SetupLog 'The configured App Installer update source was registered successfully.'
+        }
+        catch {
+            $updateWarning = 'The app was installed, but automatic update registration could not be completed. Open the configured App Installer link once while online to enable updates. Details: ' + $_.Exception.Message
+            Write-SetupLog ("Update registration warning: " + $_.Exception.Message)
+        }
+        finally {
+            if (Test-Path -LiteralPath $manifestPath) {
+                Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 

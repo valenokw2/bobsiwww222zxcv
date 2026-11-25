@@ -20,7 +20,7 @@ namespace PixelOverlayInstaller
     internal static class Program
     {
         internal const string AppVersion = "__APP_VERSION__";
-        internal const string AppInstallerUri = "https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller";
+        internal const string AppInstallerUri = "__APPINSTALLER_URI__";
         internal const string CertificateThumbprint = "A68A682C3193352F350F0FC6D7A5F8990863E150";
 
         [STAThread]
@@ -109,12 +109,7 @@ namespace PixelOverlayInstaller
                 "PixelOverlayInstaller.Payload.PixelOverlay.cer",
                 "PixelOverlay.cer");
             ExtractResource("PixelOverlayInstaller.Payload.PixelOverlay.msix", "PixelOverlay.msix");
-            ExtractResource("PixelOverlayInstaller.Payload.Microsoft.NET.CoreFramework.Debug.2.2.appx",
-                "Microsoft.NET.CoreFramework.Debug.2.2.appx");
-            ExtractResource("PixelOverlayInstaller.Payload.Microsoft.NET.CoreRuntime.2.2.appx",
-                "Microsoft.NET.CoreRuntime.2.2.appx");
-            ExtractResource("PixelOverlayInstaller.Payload.Microsoft.VCLibs.x64.14.00.appx",
-                "Microsoft.VCLibs.x64.14.00.appx");
+            ExtractDependencyResources();
 
             Panel header = new Panel();
             header.Dock = DockStyle.Top;
@@ -257,6 +252,7 @@ namespace PixelOverlayInstaller
         private string ExtractResource(string resourceName, string fileName)
         {
             string path = Path.Combine(payloadDirectory, fileName);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
             using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName))
             {
                 if (stream == null)
@@ -265,6 +261,25 @@ namespace PixelOverlayInstaller
                     stream.CopyTo(output);
             }
             return path;
+        }
+
+        private void ExtractDependencyResources()
+        {
+            const string prefix = "PixelOverlayInstaller.Payload.Dependencies.";
+            string[] resources = Assembly.GetExecutingAssembly().GetManifestResourceNames();
+            int extracted = 0;
+            foreach (string resourceName in resources)
+            {
+                if (!resourceName.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                string fileName = resourceName.Substring(prefix.Length);
+                if (String.IsNullOrWhiteSpace(fileName) || !String.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal))
+                    throw new InvalidOperationException("Installer contains an invalid dependency resource name.");
+                ExtractResource(resourceName, Path.Combine("Dependencies", fileName));
+                extracted++;
+            }
+            if (extracted == 0)
+                throw new InvalidOperationException("Installer payload does not contain framework dependencies.");
+            AppendLog("Extracted " + extracted + " package dependency file(s).");
         }
 
         private void AppendLog(string message)

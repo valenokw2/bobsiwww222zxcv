@@ -9,7 +9,7 @@ on:
       version:
         description: "MSIX version in four-part format, for example 1.0.2.0"
         required: true
-        default: "1.0.2.0"
+        default: "1.0.3.0"
         type: string
       prerelease:
         description: "Publish as a beta/prerelease"
@@ -111,6 +111,7 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
           $pfxPath = Join-Path $env:RUNNER_TEMP 'PixelOverlay-Signing.pfx'
           $bytes = [Convert]::FromBase64String($env:PIXEL_OVERLAY_SIGNING_PFX_BASE64)
@@ -197,7 +198,13 @@ jobs:
             throw 'The single-file installer source files are missing.'
           }
 
-          $installerCode = (Get-Content -LiteralPath $installerSource -Raw).Replace('__APP_VERSION__', $env:RELEASE_VERSION)
+          $appInstallerUri = ''
+          if ($env:RELEASE_PRERELEASE -ne 'true') {
+            $appInstallerUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller'
+          }
+          $installerCode = (Get-Content -LiteralPath $installerSource -Raw).
+            Replace('__APP_VERSION__', $env:RELEASE_VERSION).
+            Replace('__APPINSTALLER_URI__', $appInstallerUri)
           $generatedSource = Join-Path $env:RUNNER_TEMP 'PixelOverlayInstaller.cs'
           [IO.File]::WriteAllText($generatedSource, $installerCode, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -208,11 +215,16 @@ jobs:
           $resourceArguments = @(
             "/resource:$mainAsset,PixelOverlayInstaller.Payload.PixelOverlay.msix",
             "/resource:$(Join-Path $assetDirectory 'PixelOverlay.cer'),PixelOverlayInstaller.Payload.PixelOverlay.cer",
-            "/resource:$(Join-Path $assetDirectory 'Microsoft.NET.CoreFramework.Debug.2.2.appx'),PixelOverlayInstaller.Payload.Microsoft.NET.CoreFramework.Debug.2.2.appx",
-            "/resource:$(Join-Path $assetDirectory 'Microsoft.NET.CoreRuntime.2.2.appx'),PixelOverlayInstaller.Payload.Microsoft.NET.CoreRuntime.2.2.appx",
-            "/resource:$(Join-Path $assetDirectory 'Microsoft.VCLibs.x64.14.00.appx'),PixelOverlayInstaller.Payload.Microsoft.VCLibs.x64.14.00.appx",
             "/resource:$installerScript,PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1"
           )
+          $embeddedDependencies = @($dependencyPaths | ForEach-Object { Get-Item -LiteralPath $_ })
+          foreach ($dependency in $embeddedDependencies) {
+            $resourceName = "PixelOverlayInstaller.Payload.Dependencies.$($dependency.Name)"
+            $resourceArguments += "/resource:$($dependency.FullName),$resourceName"
+          }
+          if ($embeddedDependencies.Count -eq 0) {
+            throw 'Cannot create a self-contained installer without the framework dependency payloads.'
+          }
           $compilerArguments = @(
             '/nologo',
             '/target:winexe',
@@ -246,11 +258,10 @@ jobs:
           $requiredResources = @(
             'PixelOverlayInstaller.Payload.PixelOverlay.msix',
             'PixelOverlayInstaller.Payload.PixelOverlay.cer',
-            'PixelOverlayInstaller.Payload.Microsoft.NET.CoreFramework.Debug.2.2.appx',
-            'PixelOverlayInstaller.Payload.Microsoft.NET.CoreRuntime.2.2.appx',
-            'PixelOverlayInstaller.Payload.Microsoft.VCLibs.x64.14.00.appx',
             'PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1'
-          )
+          ) + @($embeddedDependencies | ForEach-Object {
+            "PixelOverlayInstaller.Payload.Dependencies.$($_.Name)"
+          })
           $missingResources = @($requiredResources | Where-Object { $_ -notin $embeddedResources })
           if ($missingResources.Count -gt 0) {
             throw "The setup EXE is missing embedded payload resources: $($missingResources -join ', ')"
@@ -311,6 +322,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation or update failed.' }
 
       - name: Publish the stable App Installer manifest
+        if: steps.release.outputs.prerelease == 'false'
         shell: pwsh
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}

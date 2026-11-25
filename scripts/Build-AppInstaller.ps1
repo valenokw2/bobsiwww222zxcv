@@ -75,6 +75,12 @@ if ($mainIdentity.ProcessorArchitecture -ne 'x64') {
 
 $releaseBase = "https://github.com/$RepositoryFullName/releases/download/$ReleaseTag"
 $stableAppInstallerUri = "https://github.com/$RepositoryFullName/releases/download/update-channel/PixelOverlay.appinstaller"
+if ($ReleaseTag -match '-[A-Za-z0-9.-]+$') {
+    $appInstallerUri = "$releaseBase/PixelOverlay.appinstaller"
+}
+else {
+    $appInstallerUri = $stableAppInstallerUri
+}
 $namespace = 'http://schemas.microsoft.com/appx/appinstaller/2021'
 
 $document = New-Object System.Xml.XmlDocument
@@ -82,7 +88,7 @@ $document.AppendChild($document.CreateXmlDeclaration('1.0', 'UTF-8', $null)) | O
 
 $root = $document.CreateElement('AppInstaller', $namespace)
 $root.SetAttribute('Version', $Version)
-$root.SetAttribute('Uri', $stableAppInstallerUri)
+$root.SetAttribute('Uri', $appInstallerUri)
 $document.AppendChild($root) | Out-Null
 
 $main = $document.CreateElement('MainPackage', $namespace)
@@ -151,7 +157,7 @@ finally {
 }
 
 [xml]$validation = Get-Content -LiteralPath $OutputPath -Raw
-if ($validation.DocumentElement.GetAttribute('Uri') -ne $stableAppInstallerUri) {
+if ($validation.DocumentElement.GetAttribute('Uri') -ne $appInstallerUri) {
     throw 'The App Installer manifest does not contain the expected stable update URI.'
 }
 if (!$validation.SelectSingleNode("/*[local-name()='AppInstaller']/*[local-name()='MainPackage']")) {
@@ -161,5 +167,5 @@ if (!$validation.SelectSingleNode("/*[local-name()='AppInstaller']/*[local-name(
 Write-Host "Created App Installer manifest: $OutputPath"
 Write-Host "Application version: $Version"
 Write-Host "Release asset base: $releaseBase"
-Write-Host "Stable update URI: $stableAppInstallerUri"
+Write-Host "Update URI: $appInstallerUri"
 Write-Host "Framework dependencies: $($DependencyPaths.Count)"
