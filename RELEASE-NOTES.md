@@ -5,9 +5,9 @@ This release introduces a single-file Windows setup program and the first persis
 ## Installation and updates
 - PixelOverlay-Setup.exe built with Inno Setup.
 - Automatically checks Windows version and x64 architecture.
-- Installs the publisher certificate for the current Windows user.
+- Installs the publisher certificate into Local Computer > Trusted People after UAC approval; the app package remains per-user.
 - Installs the signed MSIX package and its x64 framework dependencies through Windows App Installer.
-- Registers a stable .appinstaller update URI hosted from the repository.
+- Registers a stable .appinstaller update URI hosted as a fixed GitHub Release asset.
 - Enables on-launch update checks and Windows background update checks.
 - Uses a persistent Code Signing certificate imported from GitHub Actions Secrets; the private key is not stored in the repository.
 
