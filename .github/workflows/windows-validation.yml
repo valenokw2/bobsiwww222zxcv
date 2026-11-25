@@ -216,3 +216,12 @@ jobs:
           finally {
             if (Test-Path -LiteralPath $pfxPath) { Remove-Item -LiteralPath $pfxPath -Force }
           }
+
+      - name: Upload single-file setup for local Game Bar smoke test
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixelOverlay-1.0.3.0-Setup-Validation
+          path: ${{ runner.temp }}/PixelOverlay-Validation-Assets/PixelOverlay-Setup-Validation.exe
+          if-no-files-found: error
+          retention-days: 7
