@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using PixelOverlay.Models;
 using Windows.Graphics.Imaging;
@@ -73,8 +72,6 @@ namespace PixelOverlay.Services
             catch (FileNotFoundException) { }
             SettingsStore.Current.RemoveImage(item.Id);
         }
-
-        public ImageRecord Selected() => SettingsStore.Current.Library.FirstOrDefault(x => x.Id == SettingsStore.Current.State.SelectedImageId);
 
         public Task<BitmapImage> LoadBitmapAsync(ImageRecord item)
         {
