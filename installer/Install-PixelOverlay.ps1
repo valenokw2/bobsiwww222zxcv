@@ -10,8 +10,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$TargetVersion,
 
-    [Parameter(Mandatory = $true)]
-    [string]$AppInstallerUri,
+    [string]$AppInstallerUri = '',
 
     [switch]$ForceApplicationShutdown
 )
@@ -86,6 +85,9 @@ function Get-DependenciesToInstall {
 
     foreach ($path in $DependencyPaths) {
         $identity = Get-AppxFileIdentity -Path $path
+        if ([string]::IsNullOrWhiteSpace($identity.Architecture) -or $identity.Architecture -notin @('x64', 'neutral')) {
+            throw "Dependency '$(Split-Path -Leaf $path)' is not x64-compatible: '$($identity.Architecture)'."
+        }
         $installed = Get-AppxPackage -Name $identity.Name -ErrorAction SilentlyContinue |
             Where-Object {
                 $_.Publisher -eq $identity.Publisher -and

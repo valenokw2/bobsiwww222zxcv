@@ -215,7 +215,9 @@ namespace PixelOverlay.Views
                 {
                     _viewLibrary.Insert(0, item);
                     _selected = item;
-                    LibraryList.SelectedItem = item;
+                    _restoringSelection = true;
+                    try { LibraryList.SelectedItem = item; }
+                    finally { _restoringSelection = false; }
                     _viewState.SelectedImageId = item.Id;
                 }
                 finally
@@ -327,8 +329,17 @@ namespace PixelOverlay.Views
         {
             if (!_dragging || _viewState == null) return;
             var point = e.GetCurrentPoint(PreviewSurface).Position;
-            _viewState.PositionX = Math.Round(_originX + point.X - _dragStart.X);
-            _viewState.PositionY = Math.Round(_originY + point.Y - _dragStart.Y);
+            _batchUpdates++;
+            try
+            {
+                _viewState.PositionX = Math.Round(_originX + point.X - _dragStart.X);
+                _viewState.PositionY = Math.Round(_originY + point.Y - _dragStart.Y);
+            }
+            finally
+            {
+                _batchUpdates--;
+                CommitView();
+            }
         }
 
         private void Preview_PointerReleased(object sender, PointerRoutedEventArgs e)

@@ -202,9 +202,7 @@ jobs:
           if ($env:RELEASE_PRERELEASE -ne 'true') {
             $appInstallerUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller'
           }
-          $installerCode = (Get-Content -LiteralPath $installerSource -Raw).
-            Replace('__APP_VERSION__', $env:RELEASE_VERSION).
-            Replace('__APPINSTALLER_URI__', $appInstallerUri)
+          $installerCode = (Get-Content -LiteralPath $installerSource -Raw).Replace('__APP_VERSION__', $env:RELEASE_VERSION).Replace('__APPINSTALLER_URI__', $appInstallerUri)
           $generatedSource = Join-Path $env:RUNNER_TEMP 'PixelOverlayInstaller.cs'
           [IO.File]::WriteAllText($generatedSource, $installerCode, (New-Object System.Text.UTF8Encoding($false)))
 
