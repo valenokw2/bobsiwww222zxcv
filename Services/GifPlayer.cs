@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using SystemBuffer = System.Buffer;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 using Windows.Graphics.Imaging;
@@ -138,7 +139,7 @@ namespace PixelOverlay.Services
         private void ApplyPreviousDisposal()
         {
             if (_previousDisposal == 2) Clear(_previousLeft, _previousTop, _previousWidth, _previousHeight);
-            else if (_previousDisposal == 3 && _snapshot != null) System.System.Buffer.BlockCopy(_snapshot, 0, _canvas, 0, _canvas.Length);
+            else if (_previousDisposal == 3 && _snapshot != null) SystemBuffer.BlockCopy(_snapshot, 0, _canvas, 0, _canvas.Length);
         }
 
         private void Clear(int left, int top, int width, int height)
@@ -172,7 +173,7 @@ namespace PixelOverlay.Services
                     int destinationIndex = (destinationY * _width + destinationX) * 4;
                     if (alpha == 255)
                     {
-                        Buffer.BlockCopy(source, sourceIndex, _canvas, destinationIndex, 4);
+                        SystemBuffer.BlockCopy(source, sourceIndex, _canvas, destinationIndex, 4);
                         continue;
                     }
                     int inverse = 255 - alpha;
