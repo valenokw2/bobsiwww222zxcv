@@ -299,7 +299,7 @@ end;
 function RunInstallProcess(const Parameters: String; var ExitCode: Integer): Boolean;
 begin
   Result := ExecAsOriginalUser(
-    ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe'),
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode);
 end;
 
