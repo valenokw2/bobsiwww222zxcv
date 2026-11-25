@@ -64,8 +64,7 @@ begin
   if ResultCode <> 0 then
   begin
     Result :=
-      'Pixel Overlay could not install its publisher certificate (exit code ' + IntToStr(ResultCode) + ').' +
-      #13#10 + #13#10 +
+      'Pixel Overlay could not install its publisher certificate (exit code ' + IntToStr(ResultCode) + ').' + #13#10 + #13#10 +
       'Check the installer log under the Windows account used for setup.';
     Exit;
   end;
@@ -79,8 +78,7 @@ begin
   if not ExecAsOriginalUser(PowerShellPath, InstallParameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
     Result :=
-      'The publisher certificate was installed, but setup could not start the per-user package installation.' +
-      #13#10 + #13#10 +
+      'The publisher certificate was installed, but setup could not start the per-user package installation.' + #13#10 + #13#10 +
       'Close this installer and launch it normally from your Windows account. Do not use Run as administrator.';
     Exit;
   end;
