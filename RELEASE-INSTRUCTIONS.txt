@@ -3,14 +3,31 @@ PIXEL OVERLAY — WINDOWS INSTALLER
 
 Install
 1. Download PixelOverlay-Setup.exe from the official GitHub Releases page.
-2. Close Xbox Game Bar if it is currently open.
-3. Run PixelOverlay-Setup.exe and click Install.
-4. When installation finishes, press Win+G, open Widgets, and select Pixel Overlay.
+2. Run the installer normally from your Windows account. Approve the administrator prompt when Windows asks to trust the publisher certificate.
+3. The setup wizard checks the installed Pixel Overlay version and the official update channel.
+4. For a new installation, choose one of the Windows app package volumes shown by the wizard. Windows then manages the protected package folder.
+5. Wait for the installation progress bar to complete.
+6. Press Win+G, open Widgets, and select Pixel Overlay.
 
-The setup program:
+Version handling
+- Not installed: performs a fresh installation.
+- Older version installed: updates to the latest channel version and preserves the app's local data.
+- Same version installed: reports that Pixel Overlay is already up to date and does not reinstall it.
+- Installed version is newer than the channel: prevents a downgrade.
+- Updates retain the existing Windows-managed package volume.
+- The setup checks the release manifest before it starts the package deployment. Windows verifies the signed MSIX package during installation.
+
+Install location
+Pixel Overlay is an MSIX app. Windows owns the protected package directory (normally under C:\Program Files\WindowsApps), so the setup cannot install it into an arbitrary folder such as D:\Apps\PixelOverlay.
+For a new installation, the wizard can select a package volume already registered with Windows. The default system volume is preselected. Additional drives must first be registered as Windows app package volumes in Windows Settings or with Add-AppxVolume.
+When updating an existing installation, the current package volume is retained.
+
+What the setup does
 - Checks for 64-bit Windows 10 version 2004 (build 19041) or later.
-- Requests administrator approval once to add the included publisher certificate to Local Computer > Trusted People. The app itself is then installed for the signed-in user.
+- Detects the installed and available app versions before deployment.
+- Requests administrator approval once to add the publisher certificate to Local Computer > Trusted People. The app itself is installed for the signed-in user.
 - Downloads the signed App Installer manifest and installs Pixel Overlay with its required x64 framework dependencies.
+- Shows the current installation stage and a progress indicator while Windows registers the package.
 - Registers the stable App Installer update source at the fixed update-channel GitHub Release URL.
 
 Updates
@@ -36,5 +53,6 @@ Troubleshooting
 - If the package publisher cannot be verified, confirm that setup completed and installed the included certificate into Local Computer > Trusted People.
 - If the installer reports a failure, inspect:
   %LOCALAPPDATA%\PixelOverlay\Installer.log
+- The Inno Setup bootstrapper log is available from the setup log (Setup Logging is enabled).
 - If Xbox Game Bar was not detected, install or enable Xbox Game Bar from Microsoft Store, then press Win+G.
 - If the widget list does not refresh, fully close and reopen Xbox Game Bar.
