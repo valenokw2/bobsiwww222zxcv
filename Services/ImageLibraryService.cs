@@ -14,6 +14,7 @@ namespace PixelOverlay.Services
         private const string FolderName = "Library";
         private const int MaxEdge = 8192;
         private const long MaxGifPixels = 8L * 1024L * 1024L;
+        private const ulong MaxGifFileBytes = 32UL * 1024UL * 1024UL;
         private const double MaxDecodedPixels = 12d * 1024d * 1024d;
         private const uint DefaultDecodeEdge = 4096;
 
@@ -35,6 +36,13 @@ namespace PixelOverlay.Services
             var extension = Path.GetExtension(source.Name).ToLowerInvariant();
             if (extension != ".png" && extension != ".jpg" && extension != ".jpeg" && extension != ".gif")
                 throw new InvalidOperationException("Only PNG, JPG, JPEG, and GIF files are supported.");
+
+            if (extension == ".gif")
+            {
+                var sourceProperties = await source.GetBasicPropertiesAsync();
+                if (sourceProperties.Size > MaxGifFileBytes)
+                    throw new InvalidDataException("GIF files larger than 32 MiB are not supported.");
+            }
 
             var library = await ApplicationData.Current.LocalFolder.CreateFolderAsync(FolderName, CreationCollisionOption.OpenIfExists);
             var copy = await source.CopyAsync(library, Guid.NewGuid().ToString("N") + extension, NameCollisionOption.GenerateUniqueName);

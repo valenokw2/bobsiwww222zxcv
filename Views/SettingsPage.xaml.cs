@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -81,6 +82,12 @@ namespace PixelOverlay.Views
         private void LocalState_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             if (_cleanedUp || _applyingStoreSnapshot) return;
+            // Derived text labels do not change persisted state; ignore their notifications.
+            if (e.PropertyName == nameof(OverlayState.OpacityText) ||
+                e.PropertyName == nameof(OverlayState.ScaleText) ||
+                e.PropertyName == nameof(OverlayState.RotationText) ||
+                e.PropertyName == nameof(OverlayState.GifSpeedText))
+                return;
             try
             {
                 SettingsStore.Current.UpdateState(_state);
@@ -118,15 +125,24 @@ namespace PixelOverlay.Views
             try
             {
                 _state.CopyFrom(snapshot.State ?? new OverlayState());
-                _library.Clear();
-                if (snapshot.Library != null)
-                    foreach (var item in snapshot.Library)
-                        if (item != null) _library.Add(item.Clone());
 
-                _profiles.Clear();
-                if (snapshot.Profiles != null)
-                    foreach (var profile in snapshot.Profiles)
-                        if (profile != null) _profiles.Add(profile.Clone());
+                // Slider changes are frequent. Keep existing XAML item containers and
+                // selection stable unless the underlying library actually changed.
+                if (!LibraryMatches(snapshot.Library))
+                {
+                    _library.Clear();
+                    if (snapshot.Library != null)
+                        foreach (var item in snapshot.Library)
+                            if (item != null) _library.Add(item.Clone());
+                }
+
+                if (!ProfilesMatch(snapshot.Profiles))
+                {
+                    _profiles.Clear();
+                    if (snapshot.Profiles != null)
+                        foreach (var profile in snapshot.Profiles)
+                            if (profile != null) _profiles.Add(profile.Clone());
+                }
 
                 _selected = _library.FirstOrDefault(x =>
                     string.Equals(x.Id, _state.SelectedImageId, StringComparison.Ordinal));
@@ -140,6 +156,51 @@ namespace PixelOverlay.Views
             UpdateControls();
             if (forcePreviewReload || !string.Equals(previousId, _selected?.Id, StringComparison.Ordinal))
                 await LoadPreviewAsync();
+        }
+
+        private bool LibraryMatches(IList<ImageRecord> source)
+        {
+            int sourceCount = source == null ? 0 : source.Count;
+            if (_library.Count != sourceCount) return false;
+
+            for (int i = 0; i < sourceCount; i++)
+            {
+                var left = _library[i];
+                var right = source[i];
+                if (left == null || right == null) return false;
+                if (!string.Equals(left.Id, right.Id, StringComparison.Ordinal) ||
+                    !string.Equals(left.StoredName, right.StoredName, StringComparison.Ordinal) ||
+                    !string.Equals(left.DisplayName, right.DisplayName, StringComparison.Ordinal) ||
+                    !string.Equals(left.Extension, right.Extension, StringComparison.OrdinalIgnoreCase) ||
+                    left.AddedAt != right.AddedAt)
+                    return false;
+            }
+
+            return true;
+        }
+
+        private bool ProfilesMatch(IList<OverlayProfile> source)
+        {
+            int sourceCount = source == null ? 0 : source.Count;
+            if (_profiles.Count != sourceCount) return false;
+
+            for (int i = 0; i < sourceCount; i++)
+            {
+                var left = _profiles[i];
+                var right = source[i];
+                if (left == null || right == null) return false;
+                if (!string.Equals(left.Name, right.Name, StringComparison.Ordinal) ||
+                    left.Opacity != right.Opacity ||
+                    left.Scale != right.Scale ||
+                    left.PositionX != right.PositionX ||
+                    left.PositionY != right.PositionY ||
+                    left.Rotation != right.Rotation ||
+                    left.GifSpeed != right.GifSpeed ||
+                    left.GifPlaying != right.GifPlaying)
+                    return false;
+            }
+
+            return true;
         }
 
         private async Task LoadPreviewAsync()

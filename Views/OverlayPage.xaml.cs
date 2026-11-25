@@ -190,6 +190,9 @@ namespace PixelOverlay.Views
                         player.Dispose();
                         return;
                     }
+                    // The selected GIF may have finished decoding after the user changed
+                    // playback speed or pressed Pause. Apply the latest shared snapshot.
+                    player.UpdateSchedule(SettingsStore.Current.GetSnapshot().State);
                     OverlayImage.Source = player.CurrentFrame;
                 }
                 else
