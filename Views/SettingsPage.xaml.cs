@@ -77,13 +77,14 @@ namespace PixelOverlay.Views
 
             try
             {
-                var bitmap = await _images.LoadBitmapAsync(item);
+                var bitmap = await _images.LoadBitmapAsync(item, 1280);
                 if (generation != _previewLoadGeneration || !ReferenceEquals(_selected, item)) return;
                 PreviewImage.Source = bitmap;
                 EmptyPreview.Visibility = Visibility.Collapsed;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                AppDiagnostics.Log("Settings image preview", ex);
                 if (generation != _previewLoadGeneration || !ReferenceEquals(_selected, item)) return;
                 PreviewImage.Source = null;
                 EmptyPreview.Text = "Image could not be opened";
