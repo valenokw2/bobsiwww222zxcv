@@ -45,6 +45,8 @@ var
   VolumePage: TInputOptionWizardPage;
   ProgressPage: TOutputProgressWizardPage;
   VolumePaths: TStringList;
+  VolumeNames: TStringList;
+  DefaultVolumeIndex: Integer;
   DetectedMode: String;
   InstalledVersion: String;
   AvailableVersion: String;
@@ -109,7 +111,7 @@ begin
       else if Pos('AvailableVersion=', Line) = 1 then
         AvailableVersion := Copy(Line, 18, MaxInt)
       else if Pos('InstalledLocation=', Line) = 1 then
-        InstalledLocation := Copy(Line, 18, MaxInt)
+        InstalledLocation := Copy(Line, 19, MaxInt)
       else if Pos('GameBarRunning=', Line) = 1 then
         GameBarRunning := Copy(Line, 16, MaxInt) = '1'
       else if Pos('Volume=', Line) = 1 then
@@ -127,7 +129,7 @@ begin
             IsDefault := Copy(Remainder, SecondSeparator + 1, MaxInt);
             if VolumePath <> '' then
             begin
-              VolumePage.Add(VolumeName + '  (' + VolumePath + ')');
+              VolumeNames.Add(VolumeName);
               VolumePaths.Add(VolumePath);
               if IsDefault = '1' then
                 DefaultIndex := VolumePaths.Count - 1;
@@ -137,10 +139,7 @@ begin
       end;
     end;
 
-    if (DefaultIndex >= 0) and (VolumePaths.Count > 0) then
-      VolumePage.SelectedValueIndex := DefaultIndex
-    else if VolumePaths.Count > 0 then
-      VolumePage.SelectedValueIndex := 0;
+    DefaultVolumeIndex := DefaultIndex;
 
     Result := (DetectedMode <> '') and (AvailableVersion <> '');
   finally
@@ -242,6 +241,8 @@ var
   I: Integer;
 begin
   VolumePaths := TStringList.Create;
+  VolumeNames := TStringList.Create;
+  DefaultVolumeIndex := -1;
   StatusPage := nil;
   VolumePage := nil;
   OperationSkipped := False;
@@ -261,14 +262,18 @@ begin
 
   if not PreflightFailed then
   begin
-    if DetectedMode = 'Install' then
+    for I := 0 to VolumeNames.Count - 1 do
+      VolumePage.Add(VolumeNames[I] + '  (' + VolumePaths[I] + ')');
+
+    if (DefaultVolumeIndex >= 0) and (DefaultVolumeIndex < VolumePaths.Count) then
+      VolumePage.SelectedValueIndex := DefaultVolumeIndex
+    else if VolumePaths.Count > 0 then
+      VolumePage.SelectedValueIndex := 0;
+
+    if (DetectedMode = 'Install') and (VolumePaths.Count = 0) then
     begin
-      { Volume choices were populated from the signed-in user's Windows Appx volume list. }
-      if VolumePage.Values.Count = 0 then
-      begin
-        PreflightFailed := True;
-        PreflightError := 'No online Windows app package volume is available for a new installation.';
-      end;
+      PreflightFailed := True;
+      PreflightError := 'No online Windows app package volume is available for a new installation.';
     end;
   end;
 end;
@@ -475,4 +480,6 @@ procedure DeinitializeSetup;
 begin
   if VolumePaths <> nil then
     VolumePaths.Free;
+  if VolumeNames <> nil then
+    VolumeNames.Free;
 end;
