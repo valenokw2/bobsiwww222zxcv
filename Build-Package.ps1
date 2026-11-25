@@ -45,11 +45,26 @@ if ($cert.NotAfter -le (Get-Date).AddDays(30)) {
     throw "The signing certificate expires too soon: $($cert.NotAfter)."
 }
 
-$hasCodeSigningEku = @($cert.EnhancedKeyUsageList | Where-Object {
-    $_.ObjectId.Value -eq '1.3.6.1.5.5.7.3.3'
-}).Count -gt 0
+# Import-PfxCertificate returns an X509Certificate2 directly. The
+# EnhancedKeyUsageList convenience property is added by the Cert: provider,
+# so inspect the certificate's actual EKU extension instead of that property.
+$ekuExtension = $cert.Extensions |
+    Where-Object { $_.Oid.Value -eq '2.5.29.37' } |
+    Select-Object -First 1
+
+$hasCodeSigningEku = $false
+if ($ekuExtension) {
+    $parsedEku = [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new(
+        $ekuExtension,
+        $ekuExtension.Critical
+    )
+    $hasCodeSigningEku = @($parsedEku.EnhancedKeyUsages | Where-Object {
+        $_.Value -eq '1.3.6.1.5.5.7.3.3'
+    }).Count -gt 0
+}
+
 if (!$hasCodeSigningEku) {
-    throw 'The supplied certificate does not contain the Code Signing EKU.'
+    throw 'The supplied certificate does not contain the Code Signing EKU (OID 1.3.6.1.5.5.7.3.3).'
 }
 if (!$cert.HasPrivateKey) {
     throw 'The imported signing certificate does not contain its private key.'
