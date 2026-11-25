@@ -3,8 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$CertificatePath,
     [switch]$TrustCertificateOnly,
-    [string]$VolumePath,
-    [string]$ProgressFile
+    [string]$VolumePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,18 +21,6 @@ function Set-InstallerProgress {
     )
 
     $safeStatus = $Status -replace '[\r\n|]', ' '
-    if (![string]::IsNullOrWhiteSpace($ProgressFile)) {
-        try {
-            [System.IO.File]::WriteAllText(
-                $ProgressFile,
-                "$Percent|$safeStatus",
-                ([System.Text.UTF8Encoding]::new($false))
-            )
-        }
-        catch {
-            Write-Warning "Could not update the installer progress display: $($_.Exception.Message)"
-        }
-    }
     Write-Host "INSTALL_PROGRESS|$Percent|$safeStatus"
 }
 
