@@ -68,7 +68,7 @@ namespace PixelOverlay.Views
             PreviewImage.Source = null;
             if (item == null)
             {
-                EmptyPreview.Text = "PNG, JPG, JPEG or GIF\\nDrop here or import an image";
+                EmptyPreview.Text = "PNG, JPG, JPEG or GIF\nDrop here or import an image";
                 EmptyPreview.Visibility = Visibility.Visible;
                 UpdatePreviewTransform();
                 UpdateControls();

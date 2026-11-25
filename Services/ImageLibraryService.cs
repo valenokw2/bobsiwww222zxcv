@@ -14,6 +14,7 @@ namespace PixelOverlay.Services
     {
         private const string FolderName = "Library";
         private const int MaxEdge = 8192;
+        private const long MaxPixels = 16L * 1024L * 1024L;
 
         public async Task<ImageRecord> PickAndImportAsync()
         {
@@ -99,6 +100,8 @@ namespace PixelOverlay.Services
                         throw new InvalidDataException("The image has no pixels.");
                     if (decoder.PixelWidth > MaxEdge || decoder.PixelHeight > MaxEdge)
                         throw new InvalidDataException("Images larger than 8192 pixels on a side are not supported.");
+                    if ((long)decoder.PixelWidth * decoder.PixelHeight > MaxPixels)
+                        throw new InvalidDataException("Images larger than 16 megapixels are not supported.");
                     if (string.Equals(file.FileType, ".gif", StringComparison.OrdinalIgnoreCase) && decoder.FrameCount == 0)
                         throw new InvalidDataException("The GIF has no frames.");
                 }
