@@ -17,6 +17,7 @@ How the single-file installer works
 - Checks Windows x64 compatibility and the installed Pixel Overlay version.
 - Adds the embedded public certificate to Local Computer > Trusted People after administrator approval. It does not add the certificate to Trusted Root.
 - Installs the signed MSIX and all required framework packages locally for the current Windows user.
+- If Windows reports 0x80073D02 because shared package files are in use, setup asks before Windows forcibly closes affected applications or dependency users. The default is No; save all work before approving the forced-close retry.
 - Connects the installation to the stable App Installer update channel when that source is reachable.
 - Removes the temporary extracted payload when setup closes. Diagnostics remain in:
   %LOCALAPPDATA%\PixelOverlay\Installer\Setup.log
@@ -57,6 +58,7 @@ Updating Pixel Overlay keeps its app data. A full uninstall may remove app-local
 
 Troubleshooting
 - If Windows does not trust the publisher, run setup again and approve its certificate trust prompt.
+- If setup asks to close affected apps, save open work first. Choosing No leaves apps running and pauses installation; close them manually and select Retry.
 - If setup fails, inspect:
   %LOCALAPPDATA%\PixelOverlay\Installer\Setup.log
 - If automatic update registration could not complete, open the stable App Installer link above once while online.
