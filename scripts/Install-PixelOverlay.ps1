@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$CertificatePath
+    [string]$CertificatePath,
+    [switch]$TrustCertificateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,11 +47,20 @@ try {
         throw 'The included certificate is not a Code Signing certificate.'
     }
 
-    $trustedCertificate = Get-ChildItem Cert:\CurrentUser\TrustedPeople |
+    $trustedCertificate = Get-ChildItem Cert:\LocalMachine\TrustedPeople |
         Where-Object { $_.Thumbprint -eq $certificate.Thumbprint } |
         Select-Object -First 1
+
+    if ($TrustCertificateOnly) {
+        if (!$trustedCertificate) {
+            Import-Certificate -FilePath $CertificatePath -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
+        }
+        Write-Host "Trusted publisher certificate installed for this Windows device: $($certificate.Thumbprint)"
+        return
+    }
+
     if (!$trustedCertificate) {
-        Import-Certificate -FilePath $CertificatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+        throw 'The Pixel Overlay publisher certificate is not installed in Local Computer > Trusted People. Run the setup installer again and approve its administrator prompt.'
     }
 
     $appInstallerUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller'
