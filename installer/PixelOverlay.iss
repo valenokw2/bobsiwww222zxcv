@@ -177,21 +177,21 @@ begin
       '-File "' + DetectScript + '" -OutputPath "' + OutputPath + '"';
 
     if not RunPowerShell(Parameters, True, ewWaitUntilTerminated, ResultCode) then
-      raise Exception.Create('Windows PowerShell could not be started to inspect this PC.');
+      RaiseException('Windows PowerShell could not be started to inspect this PC.');
     if ResultCode <> 0 then
-      raise Exception.Create('Could not check the current Pixel Overlay version. Confirm that you are online and try again.');
+      RaiseException('Could not check the current Pixel Overlay version. Confirm that you are online and try again.');
 
     ProgressPage.SetText('Reading the installed package and available install volumes...', '');
     ProgressPage.SetProgress(1, 2);
 
     if not ReadPreflightFile(OutputPath) then
-      raise Exception.Create('The installer could not read the version and package-volume information.');
+      RaiseException('The installer could not read the version and package-volume information.');
 
     if (DetectedMode = 'Install') and (VolumePaths.Count = 0) then
-      raise Exception.Create('Windows did not report an available MSIX package volume.');
+      RaiseException('Windows did not report an available MSIX package volume.');
     if not ((DetectedMode = 'Install') or (DetectedMode = 'Update') or
             (DetectedMode = 'Current') or (DetectedMode = 'Newer')) then
-      raise Exception.Create('The update channel returned an unsupported installation state.');
+      RaiseException('The update channel returned an unsupported installation state.');
 
     ProgressPage.SetProgress(2, 2);
     ProgressPage.SetText('System check complete.', '');
