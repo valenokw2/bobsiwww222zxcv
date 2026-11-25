@@ -35,11 +35,6 @@ Source: "..\scripts\Install-PixelOverlay.ps1"; Flags: dontcopy
 Source: "..\ReleaseAssets\PixelOverlay.cer"; Flags: dontcopy
 
 [Code]
-const
-  WAIT_OBJECT_0 = $00000000;
-  WAIT_TIMEOUT = $00000102;
-  WAIT_FAILED = $FFFFFFFF;
-
 var
   StatusPage: TOutputMsgWizardPage;
   VolumePage: TInputOptionWizardPage;
@@ -55,17 +50,6 @@ var
   PreflightFailed: Boolean;
   PreflightError: String;
   OperationSkipped: Boolean;
-
-function OpenProcess(dwDesiredAccess: LongWord; bInheritHandle: LongBool; dwProcessId: LongWord): LongWord;
-  external 'OpenProcess@kernel32.dll stdcall';
-function WaitForSingleObject(hHandle: LongWord; dwMilliseconds: LongWord): LongWord;
-  external 'WaitForSingleObject@kernel32.dll stdcall';
-function GetExitCodeProcess(hProcess: LongWord; var lpExitCode: LongWord): LongBool;
-  external 'GetExitCodeProcess@kernel32.dll stdcall';
-function CloseHandle(hObject: LongWord): LongBool;
-  external 'CloseHandle@kernel32.dll stdcall';
-procedure Sleep(dwMilliseconds: LongWord);
-  external 'Sleep@kernel32.dll stdcall';
 
 function RunPowerShell(const Parameters: String; const AsOriginalUser: Boolean;
   const Wait: TExecWait; var ResultCode: Integer): Boolean;
@@ -309,82 +293,11 @@ begin
   end;
 end;
 
-function RunInstallProcess(const Parameters, ProgressFile: String; var ExitCode: Integer): Boolean;
-var
-  ProcessId: Integer;
-  ProcessHandle: LongWord;
-  WaitResult: LongWord;
-  NativeExitCode: LongWord;
-  ProgressText: String;
-  Separator: Integer;
-  Percent: Integer;
-  Status: String;
+function RunInstallProcess(const Parameters: String; var ExitCode: Integer): Boolean;
 begin
-  Result := False;
-  ExitCode := -1;
-  ProcessId := 0;
-
-  if not ExecAsOriginalUser(
-    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    Parameters, '', SW_HIDE, ewNoWait, ProcessId) then
-  begin
-    ExitCode := ProcessId;
-    Exit;
-  end;
-
-  if ProcessId <= 0 then
-  begin
-    ExitCode := -1;
-    Exit;
-  end;
-
-  ProcessHandle := OpenProcess($00100400, False, LongWord(ProcessId));
-  if ProcessHandle = 0 then
-  begin
-    ExitCode := -1;
-    Exit;
-  end;
-
-  try
-    repeat
-      WaitResult := WaitForSingleObject(ProcessHandle, 250);
-
-      if LoadStringFromFile(ProgressFile, ProgressText) then
-      begin
-        Separator := Pos('|', ProgressText);
-        if Separator > 0 then
-        begin
-          Percent := StrToIntDef(Copy(ProgressText, 1, Separator - 1), 0);
-          Status := Copy(ProgressText, Separator + 1, MaxInt);
-          if Percent < 0 then Percent := 0;
-          if Percent > 100 then Percent := 100;
-          ProgressPage.SetText(Status, '');
-          ProgressPage.SetProgress(Percent, 100);
-        end;
-      end;
-
-      WizardForm.Update;
-      if WaitResult = WAIT_OBJECT_0 then
-        Break;
-      if WaitResult <> WAIT_TIMEOUT then
-      begin
-        ExitCode := -1;
-        Exit;
-      end;
-      Sleep(100);
-    until False;
-
-    if not GetExitCodeProcess(ProcessHandle, NativeExitCode) then
-    begin
-      ExitCode := -1;
-      Exit;
-    end;
-
-    ExitCode := Integer(NativeExitCode);
-    Result := (ExitCode = 0);
-  finally
-    CloseHandle(ProcessHandle);
-  end;
+  Result := ExecAsOriginalUser(
+    ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe'),
+    Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -421,7 +334,7 @@ begin
   ProgressPage.Show;
   try
     ProgressPage.SetText('Installing the trusted publisher certificate...', '');
-    ProgressPage.SetProgress(5, 100);
+    ProgressPage.SetProgress(10, 100);
 
     TrustParameters :=
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
@@ -443,8 +356,8 @@ begin
       Exit;
     end;
 
-    ProgressPage.SetText('Starting the per-user app installation...', '');
-    ProgressPage.SetProgress(12, 100);
+    ProgressPage.SetText('Windows is preparing the per-user package installation...', '');
+    ProgressPage.SetProgress(25, 100);
 
     InstallParameters :=
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
@@ -459,7 +372,9 @@ begin
     end;
 
     Log('Installing or updating Pixel Overlay for the original signed-in Windows user.');
-    ProcessStarted := RunInstallProcess(InstallParameters, ProgressFile, ResultCode);
+    ProgressPage.SetText('Windows is downloading and registering the signed MSIX package. This stage can take a few minutes...', '');
+    ProgressPage.SetProgress(45, 100);
+    ProcessStarted := RunInstallProcess(InstallParameters, ResultCode);
     if not ProcessStarted then
     begin
       Result := 'Pixel Overlay could not be installed (exit code ' + IntToStr(ResultCode) + ').' +
