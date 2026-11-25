@@ -6,6 +6,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+$ExpectedCertificateSha256 = '65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F'
+
+function ConvertFrom-SafeXmlText {
+    param([Parameter(Mandatory = $true)][string]$XmlText)
+
+    $settings = New-Object System.Xml.XmlReaderSettings
+    $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver = $null
+    $settings.MaxCharactersInDocument = 2097152
+    $document = New-Object System.Xml.XmlDocument
+    $document.XmlResolver = $null
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($XmlText), $settings)
+    try { $document.Load($reader) }
+    finally { $reader.Dispose() }
+    return ,$document
+}
 
 function Get-AppxManifestInfo {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -18,8 +34,9 @@ function Get-AppxManifestInfo {
         $stream = $entry.Open()
         try {
             $reader = New-Object System.IO.StreamReader($stream)
-            try { [xml]$manifest = $reader.ReadToEnd() }
+            try { $manifestText = $reader.ReadToEnd() }
             finally { $reader.Dispose() }
+            $manifest = ConvertFrom-SafeXmlText -XmlText $manifestText
         }
         finally { $stream.Dispose() }
 
@@ -60,9 +77,16 @@ $certificateInfo = [System.Security.Cryptography.X509Certificates.X509Certificat
 if ($certificateInfo.Subject -ne 'CN=PixelOverlayDeveloper') {
     throw "Unexpected signing certificate subject: $($certificateInfo.Subject)"
 }
-Import-Certificate -FilePath $certificate -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+$actualCertificateSha256 = (Get-FileHash -LiteralPath $certificate -Algorithm SHA256).Hash
+if ($actualCertificateSha256 -ne $ExpectedCertificateSha256) {
+    throw "The publisher certificate SHA-256 '$actualCertificateSha256' does not match the pinned Pixel Overlay certificate."
+}
 
 $mainInfo = Get-AppxManifestInfo -Path $package
+if ($mainInfo.Name -ne 'PixelOverlay' -or $mainInfo.Publisher -ne 'CN=PixelOverlayDeveloper' -or $mainInfo.Architecture -ne 'x64') {
+    throw "Unexpected MSIX identity. Expected PixelOverlay / CN=PixelOverlayDeveloper / x64; received $($mainInfo.Name) / $($mainInfo.Publisher) / $($mainInfo.Architecture)."
+}
+Import-Certificate -FilePath $certificate -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
 $requiredNodes = $mainInfo.Manifest.SelectNodes("/*[local-name()='Package']/*[local-name()='Dependencies']/*[local-name()='PackageDependency']")
 
 # Release pages contain flat assets; local UWP build output nests frameworks in
