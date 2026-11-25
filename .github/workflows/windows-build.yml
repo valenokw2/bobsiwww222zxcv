@@ -190,6 +190,62 @@ jobs:
             if (Test-Path $pfxPath) { Remove-Item $pfxPath -Force }
           }
 
+          # Build a self-contained WinForms bootstrapper with all deployment files embedded.
+          $installerSource = Join-Path $env:GITHUB_WORKSPACE 'installer\\PixelOverlayInstaller.cs'
+          $installerScript = Join-Path $env:GITHUB_WORKSPACE 'installer\\Install-PixelOverlay.ps1'
+          if (!(Test-Path $installerSource) -or !(Test-Path $installerScript)) {
+            throw 'The single-file installer source files are missing.'
+          }
+
+          $installerCode = (Get-Content -LiteralPath $installerSource -Raw).Replace('__APP_VERSION__', $env:RELEASE_VERSION)
+          $generatedSource = Join-Path $env:RUNNER_TEMP 'PixelOverlayInstaller.cs'
+          [IO.File]::WriteAllText($generatedSource, $installerCode, (New-Object System.Text.UTF8Encoding($false)))
+
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe'
+          if (!(Test-Path -LiteralPath $csc)) { throw 'The .NET Framework C# compiler was not found on the Windows runner.' }
+
+          $setupPath = Join-Path $assetDirectory 'PixelOverlay-Setup.exe'
+          $resourceArguments = @(
+            "/resource:$mainAsset,PixelOverlayInstaller.Payload.PixelOverlay.msix",
+            "/resource:$(Join-Path $assetDirectory 'PixelOverlay.cer'),PixelOverlayInstaller.Payload.PixelOverlay.cer",
+            "/resource:$(Join-Path $assetDirectory 'Microsoft.NET.CoreFramework.Debug.2.2.appx'),PixelOverlayInstaller.Payload.Microsoft.NET.CoreFramework.Debug.2.2.appx",
+            "/resource:$(Join-Path $assetDirectory 'Microsoft.NET.CoreRuntime.2.2.appx'),PixelOverlayInstaller.Payload.Microsoft.NET.CoreRuntime.2.2.appx",
+            "/resource:$(Join-Path $assetDirectory 'Microsoft.VCLibs.x64.14.00.appx'),PixelOverlayInstaller.Payload.Microsoft.VCLibs.x64.14.00.appx",
+            "/resource:$installerScript,PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1"
+          )
+          $compilerArguments = @(
+            '/nologo',
+            '/target:winexe',
+            '/platform:x64',
+            '/optimize+',
+            "/out:$setupPath",
+            '/reference:System.dll',
+            '/reference:System.Drawing.dll',
+            '/reference:System.Windows.Forms.dll'
+          ) + $resourceArguments + @($generatedSource)
+
+          & $csc @compilerArguments
+          if ($LASTEXITCODE -ne 0) { throw "Pixel Overlay single-file installer compilation failed with exit code $LASTEXITCODE." }
+          if (!(Test-Path -LiteralPath $setupPath) -or (Get-Item -LiteralPath $setupPath).Length -lt 10000000) {
+            throw 'The embedded setup executable was not created or is unexpectedly small.'
+          }
+
+          $signingCertificate = Get-ChildItem Cert:\\CurrentUser\\My |
+            Where-Object { $_.Thumbprint -eq 'A68A682C3193352F350F0FC6D7A5F8990863E150' } |
+            Select-Object -First 1
+          if (!$signingCertificate -or !$signingCertificate.HasPrivateKey) {
+            throw 'The persistent Pixel Overlay signing certificate with its private key was not available to sign the setup executable.'
+          }
+          $setupSignature = Set-AuthenticodeSignature -FilePath $setupPath -Certificate $signingCertificate -HashAlgorithm SHA256
+          if (!$setupSignature.SignerCertificate -or $setupSignature.SignerCertificate.Thumbprint -ne $signingCertificate.Thumbprint) {
+            throw 'The single-file setup executable could not be signed with the Pixel Overlay publisher certificate.'
+          }
+
+          Write-Host "Created signed self-contained installer: $setupPath"
+          Write-Host "Embedded payload size: $((Get-Item -LiteralPath $setupPath).Length) bytes"
+          Get-FileHash -Path $setupPath -Algorithm SHA256 | Format-List
+          "RELEASE_SETUP_EXE=$setupPath" >> $env:GITHUB_ENV
+
       - name: Publish GitHub release assets
         shell: pwsh
         env:
@@ -198,6 +254,7 @@ jobs:
           RELEASE_PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
           $assets = @(
+            $env:RELEASE_SETUP_EXE,
             $env:RELEASE_MAIN_PACKAGE,
             $env:RELEASE_APPINSTALLER,
             $env:RELEASE_CERTIFICATE
@@ -236,14 +293,6 @@ jobs:
             & gh @releaseArgs
           }
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation or update failed.' }
-
-          # Remove the obsolete bootstrapper from releases created by earlier builds.
-          $existingAssetNames = @(& gh release view $env:RELEASE_TAG --json assets --jq '.assets[].name' 2>$null)
-          if ($LASTEXITCODE -eq 0 -and $existingAssetNames -contains 'PixelOverlay-Setup.exe') {
-            & gh release delete-asset $env:RELEASE_TAG 'PixelOverlay-Setup.exe' --yes
-            if ($LASTEXITCODE -ne 0) { throw 'Could not remove the obsolete PixelOverlay-Setup.exe release asset.' }
-            Write-Host 'Removed obsolete release asset: PixelOverlay-Setup.exe'
-          }
 
       - name: Publish the stable App Installer manifest
         shell: pwsh
