@@ -22,6 +22,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 WizardStyle=modern dynamic windows11
+WizardSizePercent=130,120
+WizardResizable=yes
 Compression=lzma2
 SolidCompression=yes
 OutputBaseFilename=PixelOverlay-Setup
@@ -53,7 +55,7 @@ type
   end;
 
 var
-  StatusPage: TOutputMsgWizardPage;
+  StatusPage: TWizardPage;
   PreflightProgressPage: TOutputProgressWizardPage;
   ProgressPage: TOutputMarqueeProgressWizardPage;
   DetectedMode: String;
@@ -256,14 +258,136 @@ begin
       'Xbox Game Bar appears to be running. Close it before updating so Windows can register the new version cleanly.';
 end;
 
+procedure AddStatusText(Page: TWizardPage; const Caption: String;
+  Top, Height, FontSize: Integer; Bold, Wrap: Boolean);
+var
+  TextControl: TNewStaticText;
+begin
+  TextControl := TNewStaticText.Create(Page);
+  TextControl.Parent := Page.Surface;
+  TextControl.Left := 0;
+  TextControl.Top := ScaleY(Top);
+  TextControl.Width := Page.SurfaceWidth;
+  TextControl.Height := ScaleY(Height);
+  TextControl.AutoSize := False;
+  TextControl.WordWrap := Wrap;
+  TextControl.Caption := Caption;
+  TextControl.Font.Size := FontSize;
+  if Bold then
+    TextControl.Font.Style := TextControl.Font.Style + [fsBold];
+  TextControl.Anchors := [akLeft, akTop, akRight];
+end;
+
+procedure AddStatusRow(Page: TWizardPage; const Caption, Value: String; Top: Integer);
+var
+  NameLabel: TNewStaticText;
+  ValueLabel: TNewStaticText;
+  ValueLeft: Integer;
+begin
+  ValueLeft := ScaleX(156);
+
+  NameLabel := TNewStaticText.Create(Page);
+  NameLabel.Parent := Page.Surface;
+  NameLabel.Left := ScaleX(12);
+  NameLabel.Top := ScaleY(Top);
+  NameLabel.Width := ValueLeft - ScaleX(20);
+  NameLabel.Height := ScaleY(34);
+  NameLabel.AutoSize := False;
+  NameLabel.WordWrap := True;
+  NameLabel.Caption := Caption;
+  NameLabel.Font.Style := NameLabel.Font.Style + [fsBold];
+  NameLabel.Anchors := [akLeft, akTop];
+
+  ValueLabel := TNewStaticText.Create(Page);
+  ValueLabel.Parent := Page.Surface;
+  ValueLabel.Left := ValueLeft;
+  ValueLabel.Top := ScaleY(Top);
+  ValueLabel.Width := Page.SurfaceWidth - ValueLeft - ScaleX(12);
+  ValueLabel.Height := ScaleY(34);
+  ValueLabel.AutoSize := False;
+  ValueLabel.WordWrap := True;
+  ValueLabel.Caption := Value;
+  ValueLabel.Anchors := [akLeft, akTop, akRight];
+end;
+
+procedure CreateStatusPage;
+var
+  Heading: String;
+  InstalledText: String;
+  LocationText: String;
+  IntroText: String;
+begin
+  StatusPage := CreateCustomPage(wpWelcome, 'Installation overview',
+    'Review the detected installation state before continuing.');
+
+  if PreflightFailed then
+  begin
+    AddStatusText(StatusPage, 'The system check could not be completed',
+      8, 32, 15, True, False);
+    AddStatusText(StatusPage, 'Setup has not changed your Pixel Overlay installation. The check stopped with this error:',
+      48, 42, 9, False, True);
+    AddStatusText(StatusPage, PreflightError,
+      96, 155, 9, False, True);
+    AddStatusText(StatusPage, 'Diagnostic log: ' +
+      ExpandConstant('{localappdata}\\PixelOverlay\\Preflight.log'),
+      258, 32, 8, False, True);
+    Exit;
+  end;
+
+  InstalledText := InstalledVersion;
+  if InstalledText = '' then
+    InstalledText := 'Not installed';
+
+  LocationText := InstalledLocation;
+  if LocationText = '' then
+    LocationText := DefaultVolumePath;
+
+  if DetectedMode = 'Install' then
+  begin
+    Heading := 'Ready for a fresh installation';
+    IntroText := 'Pixel Overlay is not installed for this Windows account. Setup will register the latest signed package.';
+  end
+  else if DetectedMode = 'Update' then
+  begin
+    Heading := 'An update is ready';
+    IntroText := 'An older version was detected. Setup will update Pixel Overlay and preserve its application data.';
+  end
+  else if DetectedMode = 'Current' then
+  begin
+    Heading := 'Pixel Overlay is up to date';
+    IntroText := 'The latest version is already installed. Continuing will not replace or reinstall the package.';
+  end
+  else
+  begin
+    Heading := 'A newer version is already installed';
+    IntroText := 'Setup will not downgrade your current installation.';
+  end;
+
+  AddStatusText(StatusPage, Heading, 8, 32, 16, True, False);
+  AddStatusText(StatusPage, IntroText, 48, 42, 9, False, True);
+
+  AddStatusRow(StatusPage, 'INSTALLED VERSION', InstalledText, 108);
+  AddStatusRow(StatusPage, 'LATEST VERSION', AvailableVersion, 148);
+  AddStatusRow(StatusPage, 'PACKAGE LOCATION', LocationText, 188);
+
+  AddStatusText(StatusPage,
+    'Windows manages the protected WindowsApps directory for MSIX packages. A custom installation folder cannot be selected here.',
+    238, 48, 8, False, True);
+
+  if GameBarRunning then
+    AddStatusText(StatusPage,
+      'Xbox Game Bar appears to be running. Close it before updating to avoid package registration conflicts.',
+      292, 44, 8, True, True)
+  else
+    AddStatusText(StatusPage,
+      'The setup is ready. Select Next to continue.',
+      292, 30, 8, False, False);
+end;
+
 procedure InitializeWizard;
 begin
   RunPreflight;
-
-  if PreflightFailed then
-    StatusPage := CreateOutputMsgPage(wpWelcome, 'System check', 'Pixel Overlay setup could not continue', PreflightError)
-  else
-    StatusPage := CreateOutputMsgPage(wpWelcome, 'System check', 'Installation status and location', BuildStatusMessage);
+  CreateStatusPage;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
