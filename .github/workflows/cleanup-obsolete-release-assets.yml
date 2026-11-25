@@ -21,14 +21,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          mapfile -t release_tags < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+          release_tags="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName')"
 
-          for tag in "${release_tags[@]}"; do
-            asset_names="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            asset_names="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
             if printf '%s\n' "$asset_names" | grep -Fxq 'PixelOverlay-Setup.exe'; then
               echo "Removing obsolete PixelOverlay-Setup.exe from release $tag"
-              gh release delete-asset "$tag" 'PixelOverlay-Setup.exe' --yes
+              gh release delete-asset "$tag" 'PixelOverlay-Setup.exe' --repo "$GITHUB_REPOSITORY" --yes
             fi
-          done
+          done <<< "$release_tags"
 
           echo "Release cleanup complete."
