@@ -38,12 +38,8 @@ if (!$cert) {
 }
 
 $thumbprint = $cert.Thumbprint
-# MSBuild's PackageCertificateThumbprint property is a Windows certificate-store
-# selector and remains SHA-1-based. The security identity pin below is SHA-256.
-$expectedWindowsThumbprint = 'A68A682C3193352F350F0FC6D7A5F8990863E150'
-if ($thumbprint -ne $expectedWindowsThumbprint) {
-    throw "The signing certificate Windows thumbprint '$thumbprint' does not match the expected Pixel Overlay certificate."
-}
+# Keep the certificate-store thumbprint only as the value MSBuild requires for
+# PackageCertificateThumbprint. Certificate identity is pinned below with SHA-256.
 if ($cert.Subject -ne 'CN=PixelOverlayDeveloper') {
     throw "Unexpected signing certificate subject '$($cert.Subject)'. Expected CN=PixelOverlayDeveloper."
 }
