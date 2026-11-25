@@ -154,9 +154,15 @@ namespace PixelOverlay.Views
         }
         private async void Library_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (_restoringSelection || !(LibraryList.SelectedItem is ImageRecord item)) return;
-            _selected = item; SettingsStore.Current.State.SelectedImageId = item.Id; SettingsStore.Current.NotifyChanged();
-            await LoadPreviewAsync();
+            try
+            {
+                if (_restoringSelection || !(LibraryList.SelectedItem is ImageRecord item)) return;
+                _selected = item;
+                SettingsStore.Current.State.SelectedImageId = item.Id;
+                SettingsStore.Current.NotifyChanged();
+                await LoadPreviewAsync();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Library selection changed", ex); }
         }
         private async void RemoveImage_Click(object sender, RoutedEventArgs e)
         {
