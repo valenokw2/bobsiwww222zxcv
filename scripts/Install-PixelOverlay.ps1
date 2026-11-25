@@ -13,6 +13,7 @@ $logPath = Join-Path $logDirectory 'Installer.log'
 $manifestPath = Join-Path $env:TEMP ("PixelOverlay-" + [guid]::NewGuid().ToString('N') + '.appinstaller')
 $transcriptStarted = $false
 $appInstallerUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller'
+$expectedPublisherThumbprint = 'A68A682C3193352F350F0FC6D7A5F8990863E150'
 
 function Set-InstallerProgress {
     param(
@@ -51,6 +52,9 @@ try {
     )
     if ($certificate.Subject -ne 'CN=PixelOverlayDeveloper') {
         throw "Unexpected certificate publisher: $($certificate.Subject)"
+    }
+    if ($certificate.Thumbprint -ne $expectedPublisherThumbprint) {
+        throw "Unexpected Pixel Overlay signing certificate thumbprint: $($certificate.Thumbprint)"
     }
     if ($certificate.NotAfter -le (Get-Date)) {
         throw 'The included signing certificate has expired.'
