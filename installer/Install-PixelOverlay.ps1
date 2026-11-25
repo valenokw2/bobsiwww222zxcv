@@ -157,7 +157,7 @@ try {
         # Register the remote App Installer source after the offline payload has
         # installed the same package locally. Windows sees the current version
         # and only records the update source unless a newer release is available.
-        Add-AppxPackage -Path $manifestPath -AppInstallerFile -ErrorAction Stop
+        Add-AppxPackage -Path $manifestPath -AppInstallerFile -LimitToExistingPackages -ErrorAction Stop
         Write-SetupLog 'The stable App Installer update source was registered successfully.'
     }
     catch {
