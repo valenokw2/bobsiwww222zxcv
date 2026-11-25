@@ -28,14 +28,18 @@ namespace PixelOverlay.Views
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
-            SettingsStore.Current.StateChanged += OnStateChanged;
-            if (_widget != null)
+            try
             {
-                _widget.RequestedOpacityChanged += OnWidgetStateChanged;
-                _widget.GameBarDisplayModeChanged += OnWidgetStateChanged;
-                _widget.ClickThroughEnabledChanged += OnWidgetStateChanged;
+                SettingsStore.Current.StateChanged += OnStateChanged;
+                if (_widget != null)
+                {
+                    _widget.RequestedOpacityChanged += OnWidgetStateChanged;
+                    _widget.GameBarDisplayModeChanged += OnWidgetStateChanged;
+                    _widget.ClickThroughEnabledChanged += OnWidgetStateChanged;
+                }
+                await RefreshAsync();
             }
-            await RefreshAsync();
+            catch (Exception ex) { AppDiagnostics.Log("Overlay page load", ex); }
         }
 
         private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -55,8 +59,26 @@ namespace PixelOverlay.Views
             OverlayImage.Source = null;
         }
 
-        private async void OnStateChanged(object sender, EventArgs e) => await RefreshAsync();
-        private async void OnWidgetStateChanged(XboxGameBarWidget sender, object args) => await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, async () => await RefreshAsync());
+        private async void OnStateChanged(object sender, EventArgs e)
+        {
+            try { await RefreshAsync(); }
+            catch (Exception ex) { AppDiagnostics.Log("Overlay state update", ex); }
+        }
+
+        private async void OnWidgetStateChanged(XboxGameBarWidget sender, object args)
+        {
+            try
+            {
+                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () => { _ = RefreshSafelyAsync(); });
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Game Bar widget state update", ex); }
+        }
+
+        private async Task RefreshSafelyAsync()
+        {
+            try { await RefreshAsync(); }
+            catch (Exception ex) { AppDiagnostics.Log("Overlay refresh", ex); }
+        }
 
         private async Task RefreshAsync()
         {
