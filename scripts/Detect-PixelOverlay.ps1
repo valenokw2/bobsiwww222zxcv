@@ -53,62 +53,22 @@ try {
         $mode = 'Install'
     }
 
-    $volumes = @(Get-AppxVolume | Where-Object { !$_.IsOffline })
-    if ($volumes.Count -eq 0) {
-        throw 'Windows has no online MSIX package volumes available.'
-    }
-
     $defaultVolume = Get-AppxDefaultVolume
-    $defaultVolumePath = if ($defaultVolume) { [string]$defaultVolume.PackageStorePath } else { '' }
+    $defaultVolumePath = [string]$defaultVolume.PackageStorePath
     if ([string]::IsNullOrWhiteSpace($defaultVolumePath)) {
-        $systemVolume = $volumes | Where-Object { $_.IsSystemVolume } | Select-Object -First 1
-        if ($systemVolume) {
-            $defaultVolumePath = [string]$systemVolume.PackageStorePath
-        }
-    }
-
-    $installedVolumePath = ''
-    if ($installedPackage) {
-        foreach ($volume in $volumes) {
-            $packageStorePath = [string]$volume.PackageStorePath
-            if ($packageStorePath -and
-                $installedLocation.StartsWith($packageStorePath, [StringComparison]::OrdinalIgnoreCase)) {
-                $installedVolumePath = $packageStorePath
-                break
-            }
-        }
+        throw 'Windows did not report a default MSIX app package volume.'
     }
 
     $gameBarRunning = [bool](@(Get-Process -Name 'GameBar', 'GameBarFTServer', 'XboxGameBar' -ErrorAction SilentlyContinue).Count -gt 0)
 
-    $lines = New-Object 'System.Collections.Generic.List[string]'
-    $lines.Add("Mode=$mode")
-    $lines.Add("InstalledVersion=$installedVersion")
-    $lines.Add("AvailableVersion=$availableVersion")
-    $lines.Add("InstalledLocation=$installedLocation")
-    $lines.Add("InstalledVolumePath=$installedVolumePath")
-    $lines.Add("DefaultVolumePath=$defaultVolumePath")
-    $lines.Add("GameBarRunning=$([int]$gameBarRunning)")
-
-    $selectableVolumeCount = 0
-    foreach ($volume in $volumes) {
-        $name = [string]$volume.Name
-        $path = [string]$volume.PackageStorePath
-        if ([string]::IsNullOrWhiteSpace($path)) {
-            continue
-        }
-        if ($name.Contains('|') -or $path.Contains('|')) {
-            continue
-        }
-
-        $isDefault = $path.Equals($defaultVolumePath, [StringComparison]::OrdinalIgnoreCase)
-        $lines.Add("Volume=$name|$path|$([int]$isDefault)")
-        $selectableVolumeCount++
-    }
-
-    if ($mode -eq 'Install' -and $selectableVolumeCount -eq 0) {
-        throw 'No selectable online MSIX package volume was found.'
-    }
+    $lines = @(
+        "Mode=$mode"
+        "InstalledVersion=$installedVersion"
+        "AvailableVersion=$availableVersion"
+        "InstalledLocation=$installedLocation"
+        "DefaultVolumePath=$defaultVolumePath"
+        "GameBarRunning=$([int]$gameBarRunning)"
+    )
 
     $outputDirectory = Split-Path -Parent $OutputPath
     if ($outputDirectory -and !(Test-Path -LiteralPath $outputDirectory)) {
@@ -119,6 +79,7 @@ try {
     Write-Host "Detected mode: $mode"
     Write-Host "Installed version: $(if ($installedVersion) { $installedVersion } else { 'not installed' })"
     Write-Host "Available version: $availableVersion"
+    Write-Host "Windows default package volume: $defaultVolumePath"
 }
 catch {
     Write-Error $_
