@@ -38,9 +38,11 @@ if (!$cert) {
 }
 
 $thumbprint = $cert.Thumbprint
-$expectedThumbprint = 'A68A682C3193352F350F0FC6D7A5F8990863E150'
-if ($thumbprint -ne $expectedThumbprint) {
-    throw "The signing certificate thumbprint '$thumbprint' does not match the expected Pixel Overlay certificate '$expectedThumbprint'."
+# MSBuild's PackageCertificateThumbprint property is a Windows certificate-store
+# selector and remains SHA-1-based. The security identity pin below is SHA-256.
+$expectedWindowsThumbprint = 'A68A682C3193352F350F0FC6D7A5F8990863E150'
+if ($thumbprint -ne $expectedWindowsThumbprint) {
+    throw "The signing certificate Windows thumbprint '$thumbprint' does not match the expected Pixel Overlay certificate."
 }
 if ($cert.Subject -ne 'CN=PixelOverlayDeveloper') {
     throw "Unexpected signing certificate subject '$($cert.Subject)'. Expected CN=PixelOverlayDeveloper."
@@ -77,6 +79,11 @@ if (!$cert.HasPrivateKey) {
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $cer = Join-Path $OutputDirectory 'PixelOverlay.cer'
 Export-Certificate -Cert $cert -FilePath $cer -Force | Out-Null
+$expectedCertificateSha256 = '65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F'
+$actualCertificateSha256 = (Get-FileHash -LiteralPath $cer -Algorithm SHA256).Hash
+if ($actualCertificateSha256 -ne $expectedCertificateSha256) {
+    throw "The exported signing certificate SHA-256 '$actualCertificateSha256' does not match the pinned Pixel Overlay certificate."
+}
 
 $packageDirectory = (Resolve-Path $OutputDirectory).Path
 if (!$packageDirectory.EndsWith('\')) {
