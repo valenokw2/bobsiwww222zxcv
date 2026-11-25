@@ -8,6 +8,13 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
+[assembly: AssemblyTitle("Pixel Overlay Setup")]
+[assembly: AssemblyProduct("Pixel Overlay")]
+[assembly: AssemblyCompany("Pixel Overlay")]
+[assembly: AssemblyDescription("Self-contained Windows installer for Pixel Overlay")]
+[assembly: AssemblyVersion("__APP_VERSION__")]
+[assembly: AssemblyFileVersion("__APP_VERSION__")]
+
 namespace PixelOverlayInstaller
 {
     internal static class Program
