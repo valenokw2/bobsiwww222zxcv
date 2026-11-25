@@ -38,7 +38,6 @@ if (!$cert) {
 }
 
 $thumbprint = $cert.Thumbprint
-try {
     if ($cert.Subject -ne 'CN=PixelOverlayDeveloper') {
         throw "Unexpected signing certificate subject '$($cert.Subject)'. Expected CN=PixelOverlayDeveloper."
     }
@@ -93,4 +92,3 @@ try {
     Write-Host "Created $($packages.Count) installable package(s) under: $OutputDirectory"
     Write-Host "Signing certificate: $($cert.Subject) [$thumbprint]"
     Write-Host "Public certificate exported to: $cer"
-}
