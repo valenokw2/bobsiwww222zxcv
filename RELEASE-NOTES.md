@@ -7,7 +7,7 @@ This release introduces a single-file Windows setup program and the first persis
 - Automatically checks Windows version, x64 architecture, installed version and the latest update channel.
 - Distinguishes fresh installs, available updates, already-current installs and newer installed versions; it never downgrades the app.
 - Shows an animated progress bar while Windows registers the signed package.
-- For a fresh install, lets the user select any online Windows-managed Appx package volume; updates retain the existing volume.
+- Shows the Windows-managed package location; Windows App Installer deploys to the configured default app package volume.
 - Installs the publisher certificate into Local Computer > Trusted People after UAC approval; the app package remains per-user.
 - Installs the signed MSIX package and its x64 framework dependencies through Windows App Installer.
 - Verifies the installed package version after deployment and warns when Xbox Game Bar is missing or already running.
