@@ -88,6 +88,7 @@ namespace PixelOverlay.Views
         {
             if (_cleaned || snapshot == null || snapshot.Revision <= _snapshotRevision || _viewState == null) return;
             _snapshotRevision = snapshot.Revision;
+            string previousSelectedId = _selected?.Id;
             _applyingSnapshot = true;
             try
             {
@@ -105,7 +106,8 @@ namespace PixelOverlay.Views
 
             UpdatePreviewTransform();
             UpdateControls();
-            _ = LoadPreviewSafelyAsync();
+            if (!string.Equals(previousSelectedId, _selected?.Id, StringComparison.Ordinal))
+                _ = LoadPreviewSafelyAsync();
         }
 
         private static void Replace<T>(ObservableCollection<T> target, System.Collections.Generic.IEnumerable<T> source)
