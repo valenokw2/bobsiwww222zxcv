@@ -35,11 +35,15 @@ Source: "..\scripts\Install-PixelOverlay.ps1"; Flags: dontcopy
 Source: "..\ReleaseAssets\PixelOverlay.cer"; Flags: dontcopy
 
 [Code]
+const
+  WAIT_OBJECT_0 = $00000000;
+  WAIT_TIMEOUT = $00000102;
+
 var
   StatusPage: TOutputMsgWizardPage;
   VolumePage: TInputOptionWizardPage;
   PreflightProgressPage: TOutputProgressWizardPage;
-  ProgressPage: TOutputMarqueeProgressWizardPage;
+  ProgressPage: TOutputProgressWizardPage;
   VolumePaths: TStringList;
   VolumeNames: TStringList;
   DefaultVolumeIndex: Integer;
@@ -51,6 +55,17 @@ var
   PreflightFailed: Boolean;
   PreflightError: String;
   OperationSkipped: Boolean;
+
+function OpenProcess(dwDesiredAccess: LongWord; bInheritHandle: Boolean; dwProcessId: LongWord): LongWord;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(hHandle: LongWord; dwMilliseconds: LongWord): LongWord;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function GetExitCodeProcess(hProcess: LongWord; var lpExitCode: LongWord): Boolean;
+  external 'GetExitCodeProcess@kernel32.dll stdcall';
+function CloseHandle(hObject: LongWord): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+procedure Sleep(dwMilliseconds: LongWord);
+  external 'Sleep@kernel32.dll stdcall';
 
 function RunPowerShell(const Parameters: String; const AsOriginalUser: Boolean;
   const Wait: TExecWait; var ResultCode: Integer): Boolean;
@@ -155,34 +170,39 @@ begin
   PreflightProgressPage := CreateOutputProgressPage('Checking your PC', 'Checking the installed version and Windows app package volumes...');
   PreflightProgressPage.Show;
   try
-    PreflightProgressPage.SetText('Connecting to the official Pixel Overlay update channel...', '');
-    PreflightProgressPage.SetProgress(0, 2);
-    Parameters :=
-      '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
-      '-File "' + DetectScript + '" -OutputPath "' + OutputPath + '"';
-
-    if not RunPowerShell(Parameters, True, ewWaitUntilTerminated, ResultCode) then
-      RaiseException('Windows PowerShell could not be started to inspect this PC.');
-    if ResultCode <> 0 then
-      RaiseException('Could not check the current Pixel Overlay version. Confirm that you are online and try again.');
-
-    PreflightProgressPage.SetText('Reading the installed package and available install volumes...', '');
-    PreflightProgressPage.SetProgress(1, 2);
-
-    if not ReadPreflightFile(OutputPath) then
-      RaiseException('The installer could not read the version and package-volume information.');
-
-    if (DetectedMode = 'Install') and (VolumePaths.Count = 0) then
-      RaiseException('Windows did not report an available MSIX package volume.');
-    if not ((DetectedMode = 'Install') or (DetectedMode = 'Update') or
-            (DetectedMode = 'Current') or (DetectedMode = 'Newer')) then
-      RaiseException('The update channel returned an unsupported installation state.');
-
-    PreflightProgressPage.SetProgress(2, 2);
-    PreflightProgressPage.SetText('System check complete.', '');
-  except
-    PreflightFailed := True;
-    PreflightError := GetExceptionMessage;
+    try
+      PreflightProgressPage.SetText('Connecting to the official Pixel Overlay update channel...', '');
+      PreflightProgressPage.SetProgress(0, 2);
+      Parameters :=
+        '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
+        '-File "' + DetectScript + '" -OutputPath "' + OutputPath + '"';
+  
+      if not RunPowerShell(Parameters, True, ewWaitUntilTerminated, ResultCode) then
+        RaiseException('Windows PowerShell could not be started to inspect this PC.');
+      if ResultCode <> 0 then
+        RaiseException('Could not check the current Pixel Overlay version. Confirm that you are online and try again.');
+  
+      PreflightProgressPage.SetText('Reading the installed package and available install volumes...', '');
+      PreflightProgressPage.SetProgress(1, 2);
+  
+      if not ReadPreflightFile(OutputPath) then
+        RaiseException('The installer could not read the version and package-volume information.');
+  
+      if (DetectedMode = 'Install') and (VolumePaths.Count = 0) then
+        RaiseException('Windows did not report an available MSIX package volume.');
+      if not ((DetectedMode = 'Install') or (DetectedMode = 'Update') or
+              (DetectedMode = 'Current') or (DetectedMode = 'Newer')) then
+        RaiseException('The update channel returned an unsupported installation state.');
+  
+      PreflightProgressPage.SetProgress(2, 2);
+      PreflightProgressPage.SetText('System check complete.', '');
+    except
+      PreflightFailed := True;
+      PreflightError := GetExceptionMessage;
+      except
+      PreflightFailed := True;
+      PreflightError := GetExceptionMessage;
+    end;
   finally
     PreflightProgressPage.Hide;
   end;
@@ -294,11 +314,70 @@ begin
   end;
 end;
 
-function RunInstallProcess(const Parameters: String; var ExitCode: Integer): Boolean;
+function RunInstallProcess(const Parameters, ProgressFile: String; var ExitCode: Integer): Boolean;
+var
+  ProcessId: Integer;
+  ProcessHandle: LongWord;
+  WaitResult: LongWord;
+  NativeExitCode: LongWord;
+  ProgressText: String;
+  Separator: Integer;
+  Percent: Integer;
+  Status: String;
 begin
-  Result := ExecAsOriginalUser(
+  Result := False;
+  ExitCode := -1;
+  ProcessId := 0;
+
+  if not ExecAsOriginalUser(
     ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe'),
-    Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode);
+    Parameters, '', SW_HIDE, ewNoWait, ProcessId) then
+  begin
+    ExitCode := ProcessId;
+    Exit;
+  end;
+
+  if ProcessId <= 0 then
+    Exit;
+
+  ProcessHandle := OpenProcess($00100400, False, LongWord(ProcessId));
+  if ProcessHandle = 0 then
+    Exit;
+
+  try
+    repeat
+      WaitResult := WaitForSingleObject(ProcessHandle, 200);
+
+      if LoadStringFromFile(ProgressFile, ProgressText) then
+      begin
+        Separator := Pos('|', ProgressText);
+        if Separator > 0 then
+        begin
+          Percent := StrToIntDef(Copy(ProgressText, 1, Separator - 1), 0);
+          Status := Copy(ProgressText, Separator + 1, MaxInt);
+          if Percent < 0 then Percent := 0;
+          if Percent > 100 then Percent := 100;
+          ProgressPage.SetText(Status, '');
+          ProgressPage.SetProgress(Percent, 100);
+        end;
+      end;
+
+      WizardForm.Update;
+      if WaitResult = WAIT_OBJECT_0 then
+        Break;
+      if WaitResult <> WAIT_TIMEOUT then
+        Exit;
+      Sleep(100);
+    until False;
+
+    if not GetExitCodeProcess(ProcessHandle, NativeExitCode) then
+      Exit;
+
+    ExitCode := Integer(NativeExitCode);
+    Result := (ExitCode = 0);
+  finally
+    CloseHandle(ProcessHandle);
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -331,9 +410,8 @@ begin
   ProgressFile := ExpandConstant('{tmp}\PixelOverlay-Install-Progress.txt');
   DeleteFile(ProgressFile);
 
-  ProgressPage := CreateOutputMarqueeProgressPage('Installing Pixel Overlay', 'Preparing the signed package and registering it with Windows...');
+  ProgressPage := CreateOutputProgressPage('Installing Pixel Overlay', 'Preparing the signed package and registering it with Windows...');
   ProgressPage.Show;
-  ProgressPage.Animate;
   try
     ProgressPage.SetText('Installing the trusted publisher certificate...', '');
 
@@ -374,7 +452,7 @@ begin
     Log('Installing or updating Pixel Overlay for the original signed-in Windows user.');
     ProgressPage.SetText('Windows is downloading and registering the signed MSIX package. This stage can take a few minutes...', '');
     ProcessStarted := RunInstallProcess(InstallParameters, ResultCode);
-    if not ProcessStarted then
+    if (not ProcessStarted) or (ResultCode <> 0) then
     begin
       Result := 'Pixel Overlay could not be installed (exit code ' + IntToStr(ResultCode) + ').' +
         #13#10#13#10 + 'The detailed log is available at:' + #13#10 +
