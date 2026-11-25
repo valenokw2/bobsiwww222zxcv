@@ -79,7 +79,7 @@ jobs:
             if ($mainPackages.Count -ne 1) {
               throw "Expected exactly one main MSIX package outside Dependencies; found $($mainPackages.Count)."
             }
-            $mainAsset = Join-Path $assetDirectory 'PixelOverlay-1.0.3.0-x64.msix'
+            $mainAsset = Join-Path $assetDirectory 'PixelOverlay-1.0.5.0-x64.msix'
             Copy-Item -LiteralPath $mainPackages[0].FullName -Destination $mainAsset
 
             $dependencyDirectories = @(Get-ChildItem -Path $packageOutput -Directory -Recurse |
@@ -126,7 +126,7 @@ jobs:
             $appInstallerArgs = @{
               MainPackagePath = $mainAsset
               DependencyPaths = $dependencyPaths
-              Version = '1.0.3.0'
+              Version = '1.0.5.0'
               ReleaseTag = 'validation'
               RepositoryFullName = 'valenokw2/bobsiwww222zxcv'
               ManifestUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/validation/PixelOverlay.appinstaller'
@@ -160,7 +160,7 @@ jobs:
             }
 
             $installerCode = Get-Content -LiteralPath $installerSource -Raw
-            $installerCode = $installerCode.Replace('__APP_VERSION__', '1.0.3.0')
+            $installerCode = $installerCode.Replace('__APP_VERSION__', '1.0.5.0')
             $installerCode = $installerCode.Replace('__APP_INSTALLER_URI__', '')
             $installerCode = $installerCode.Replace('__PAYLOAD_SHA256_ENTRIES__', ($payloadHashLines -join ', '))
             if ($installerCode.Contains('__PAYLOAD_SHA256_ENTRIES__')) {
@@ -259,7 +259,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: PixelOverlay-1.0.3.0-Setup-Validation
+          name: PixelOverlay-1.0.5.0-Setup-Validation
           path: ${{ runner.temp }}/PixelOverlay-Validation-Assets/PixelOverlay-Setup-Validation.exe
           if-no-files-found: error
           retention-days: 7
