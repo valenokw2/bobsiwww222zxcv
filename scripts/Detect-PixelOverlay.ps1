@@ -69,8 +69,7 @@ try {
 
     $installedVolumePath = ''
     if ($installedPackage) {
-        $selectableVolumeCount = 0
-    foreach ($volume in $volumes) {
+        foreach ($volume in $volumes) {
             $packageStorePath = [string]$volume.PackageStorePath
             if ($packageStorePath -and
                 $installedLocation.StartsWith($packageStorePath, [StringComparison]::OrdinalIgnoreCase)) {
@@ -91,6 +90,7 @@ try {
     $lines.Add("DefaultVolumePath=$defaultVolumePath")
     $lines.Add("GameBarRunning=$([int]$gameBarRunning)")
 
+    $selectableVolumeCount = 0
     foreach ($volume in $volumes) {
         $name = [string]$volume.Name
         $path = [string]$volume.PackageStorePath
