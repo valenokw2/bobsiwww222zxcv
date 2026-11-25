@@ -199,12 +199,11 @@ begin
       begin
         ErrorDetails := ReadPreflightError(ErrorPath);
         if ErrorDetails <> '' then
-          RaiseException('The version check failed:' + #13#10 + ErrorDetails +
-            #13#10#13#10 + 'Diagnostic log: ' +
-            ExpandConstant('{localappdata}\PixelOverlay\Preflight.log'))
+          RaiseException('The version check failed:' + #13#10 + ErrorDetails + #13#10#13#10 +
+            'Diagnostic log: ' + ExpandConstant('{localappdata}\\PixelOverlay\\Preflight.log'))
         else
-          RaiseException('Could not check the current Pixel Overlay version. Check your internet connection and see:' +
-            #13#10 + ExpandConstant('{localappdata}\PixelOverlay\Preflight.log'));
+          RaiseException('Could not check the current Pixel Overlay version. Check your internet connection and see:' + #13#10 +
+            ExpandConstant('{localappdata}\\PixelOverlay\\Preflight.log'));
       end;
 
       PreflightProgressPage.SetText('Reading the installed package and Windows storage settings...', '');
