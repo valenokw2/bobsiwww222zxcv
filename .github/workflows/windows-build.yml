@@ -224,9 +224,35 @@ jobs:
             throw 'The single-file installer source files are missing.'
           }
 
+          $payloadEntries = @(
+            [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.PixelOverlay.msix'; Path = $mainAsset },
+            [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.PixelOverlay.cer'; Path = (Join-Path $assetDirectory 'PixelOverlay.cer') },
+            [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1'; Path = $installerScript }
+          )
+          for ($index = 0; $index -lt $dependencyPaths.Count; $index++) {
+            $payloadEntries += [pscustomobject]@{
+              ResourceName = $dependencyResourceNames[$index]
+              Path = $dependencyPaths[$index]
+            }
+          }
+          $payloadHashLines = @(
+            foreach ($entry in $payloadEntries) {
+              if (!(Test-Path -LiteralPath $entry.Path)) { throw "Cannot hash missing installer payload: $($entry.Path)" }
+              $hash = (Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash
+              '                "' + $entry.ResourceName + '", "' + $hash + '"'
+            }
+          )
+          if ($payloadHashLines.Count -ne $payloadEntries.Count -or $payloadHashLines.Count -lt 3) {
+            throw 'Could not generate the complete embedded payload SHA-256 table.'
+          }
+
           $installerCode = Get-Content -LiteralPath $installerSource -Raw
           $installerCode = $installerCode.Replace('__APP_VERSION__', $env:RELEASE_VERSION)
           $installerCode = $installerCode.Replace('__APP_INSTALLER_URI__', $env:RELEASE_SETUP_UPDATE_URI)
+          $installerCode = $installerCode.Replace('__PAYLOAD_SHA256_ENTRIES__', ($payloadHashLines -join ', '))
+          if ($installerCode.Contains('__PAYLOAD_SHA256_ENTRIES__')) {
+            throw 'The installer payload SHA-256 table placeholder was not replaced.'
+          }
           $generatedSource = Join-Path $env:RUNNER_TEMP 'PixelOverlayInstaller.cs'
           [IO.File]::WriteAllText($generatedSource, $installerCode, (New-Object System.Text.UTF8Encoding($false)))
 
