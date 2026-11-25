@@ -152,7 +152,7 @@ jobs:
               foreach ($entry in $payloadEntries) {
                 if (!(Test-Path -LiteralPath $entry.Path)) { throw "Cannot hash missing installer payload: $($entry.Path)" }
                 $hash = (Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash
-                '                "' + $entry.ResourceName + '", "' + $hash + '"'
+                '                { "' + $entry.ResourceName + '", "' + $hash + '" }'
               }
             )
             if ($payloadHashLines.Count -ne $payloadEntries.Count -or $payloadHashLines.Count -lt 3) {
