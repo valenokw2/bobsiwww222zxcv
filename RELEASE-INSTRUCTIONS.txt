@@ -1,57 +1,64 @@
-PIXEL OVERLAY — WINDOWS APP INSTALLER
-=====================================
+PIXEL OVERLAY — SINGLE-FILE WINDOWS INSTALLER
+================================================
 
 Install
-1. Open the official stable App Installer link:
-   https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller
-2. Windows App Installer opens the package page. Select Install (or Update if an older version is installed).
-3. Let Windows download the signed Pixel Overlay package and its required x64 framework dependencies.
-4. Press Win+G, open Widgets, and select Pixel Overlay.
+1. Open the official GitHub Releases page:
+   https://github.com/valenokw2/bobsiwww222zxcv/releases
+2. Download PixelOverlay-Setup.exe from the latest Pixel Overlay release.
+3. Run the EXE. The application package, all required x64 framework dependencies, publisher certificate and installation logic are embedded in that one file.
+4. Approve the administrator prompt once when setup asks Windows to trust the Pixel Overlay publisher certificate.
+5. Setup installs the app for the currently signed-in Windows user. It does not install the app into the administrator account.
+6. Press Win+G, open Widgets, and select Pixel Overlay.
 
-The .appinstaller file is the only installation entry point. Do not download or run a separate setup EXE. The MSIX and framework packages listed as release assets are downloaded by Windows App Installer automatically.
+Do not download the MSIX, APPX dependencies or CER separately when using PixelOverlay-Setup.exe. Those files are bundled inside the installer.
 
-Publisher certificate
-The beta package uses a self-signed Code Signing certificate. If Windows reports that the publisher is not trusted, download PixelOverlay.cer from the same official versioned GitHub Release and import it once:
-1. Right-click PixelOverlay.cer and select Install Certificate.
-2. Choose Local Machine and approve the administrator prompt.
-3. Select Place all certificates in the following store.
-4. Choose Trusted People (not Trusted Root Certification Authorities) and finish the wizard.
-5. Open the .appinstaller link again.
+How the single-file installer works
+- Extracts its embedded package files to a temporary folder.
+- Checks Windows x64 compatibility and the installed Pixel Overlay version.
+- Adds the embedded public certificate to Local Computer > Trusted People after administrator approval. It does not add the certificate to Trusted Root.
+- Installs the signed MSIX and all required framework packages locally for the current Windows user.
+- Connects the installation to the stable App Installer update channel when that source is reachable.
+- Removes the temporary extracted payload when setup closes. Diagnostics remain in:
+  %LOCALAPPDATA%\PixelOverlay\Installer\Setup.log
 
-Only import the certificate from the official repository:
-https://github.com/valenokw2/bobsiwww222zxcv/releases
+Automatic updates
+The stable App Installer update source is:
+https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller
+
+Windows checks for updates when the app launches (at most once every 12 hours) and may perform background update checks. The versioned GitHub release retains the MSIX and framework-package assets used by that update source. They are technical update assets; users do not need to download them manually.
+
+If the update channel is unavailable during setup, the embedded app package can still be installed. Setup logs a warning if it cannot register automatic updates. Open the stable App Installer link once while online to connect the update source.
 
 Version handling
-- Not installed: Windows App Installer performs a fresh installation.
-- Older version installed: App Installer updates the package and preserves application data.
-- Same version installed: no package replacement is needed.
-- Newer version installed: Windows does not downgrade it.
-- Future updates use the same package identity and signing certificate. The stable update manifest is checked on launch and by Windows background update servicing.
+- Not installed: performs a fresh installation.
+- Older version installed: updates to the bundled version and preserves the app's local data.
+- Same version installed: reports that the app is already current and does not reinstall it.
+- Newer version installed: prevents a downgrade.
+- Updates retain the existing Windows-managed package location.
 
 Install location
 Pixel Overlay is an MSIX app. Windows owns the protected package directory (normally under C:\Program Files\WindowsApps), so an arbitrary installation folder such as D:\Apps\PixelOverlay cannot be selected.
-For a new installation, Windows App Installer uses the default app package volume configured in Windows. To change where new apps are stored, use Windows Settings > System > Storage > Advanced storage settings > Where new content is saved > New apps will save to, then start the .appinstaller installation again.
+For a new installation, Windows uses the default app package volume configured in Windows. To change where new apps are stored, use Windows Settings > System > Storage > Advanced storage settings > Where new content is saved > New apps will save to before installing.
 When updating an existing installation, Windows manages the package location and does not move the installed package.
 
 Requirements
 - 64-bit Windows 10 version 2004 (build 19041) or later.
 - Xbox Game Bar installed and enabled.
-- Internet access during installation and update checks.
-- Windows App Installer available on the device.
+- Administrator approval once to trust the publisher certificate.
+- Internet access during setup if automatic update registration is to be enabled immediately.
 
-Updates
-- Windows checks for updates when the app is launched (at most once every 12 hours).
-- An automatic background update task is also registered. Windows schedules these checks periodically when background servicing is available.
-- Update checks are controlled by Windows App Installer and may be delayed while the device is offline or the app is in use.
-- Users do not need to download a setup program again; updates are delivered through the stable .appinstaller source.
+Security and reputation
+This beta is signed with a persistent self-signed Code Signing certificate. The installer imports the matching public certificate into Local Computer > Trusted People after one UAC approval; it does not add the certificate to Trusted Root. SmartScreen may still show an unrecognized-app warning because the certificate is self-signed and the installer has no Microsoft Store reputation. Only run releases downloaded from the official repository:
+https://github.com/valenokw2/bobsiwww222zxcv/releases
 
 Uninstall
 Open Windows Settings > Apps > Installed apps, find Pixel Overlay, and choose Uninstall.
-Updating Pixel Overlay keeps its app data. A full uninstall may remove app-local settings and image-library data, so back up anything you want to keep first. The publisher certificate remains in Local Machine > Trusted People until removed separately.
+Updating Pixel Overlay keeps its app data. A full uninstall may remove app-local settings and image-library data, so back up anything you want to keep first. The publisher certificate remains in Local Computer > Trusted People until removed separately.
 
 Troubleshooting
-- If Windows does not trust the publisher, follow the one-time certificate import steps above.
-- If App Installer cannot download the package, confirm that the device is online and that the stable update link opens:
-  https://github.com/valenokw2/bobsiwww222zxcv/releases/download/update-channel/PixelOverlay.appinstaller
+- If Windows does not trust the publisher, run setup again and approve its certificate trust prompt.
+- If setup fails, inspect:
+  %LOCALAPPDATA%\PixelOverlay\Installer\Setup.log
+- If automatic update registration could not complete, open the stable App Installer link above once while online.
 - If the widget does not appear, confirm Xbox Game Bar is installed and enabled, then press Win+G.
 - If the widget list does not refresh, fully close and reopen Xbox Game Bar.
