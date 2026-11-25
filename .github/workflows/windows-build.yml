@@ -241,6 +241,22 @@ jobs:
             throw 'The single-file setup executable could not be signed with the Pixel Overlay publisher certificate.'
           }
 
+          $setupAssembly = [Reflection.Assembly]::LoadFile($setupPath)
+          $embeddedResources = @($setupAssembly.GetManifestResourceNames())
+          $requiredResources = @(
+            'PixelOverlayInstaller.Payload.PixelOverlay.msix',
+            'PixelOverlayInstaller.Payload.PixelOverlay.cer',
+            'PixelOverlayInstaller.Payload.Microsoft.NET.CoreFramework.Debug.2.2.appx',
+            'PixelOverlayInstaller.Payload.Microsoft.NET.CoreRuntime.2.2.appx',
+            'PixelOverlayInstaller.Payload.Microsoft.VCLibs.x64.14.00.appx',
+            'PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1'
+          )
+          $missingResources = @($requiredResources | Where-Object { $_ -notin $embeddedResources })
+          if ($missingResources.Count -gt 0) {
+            throw "The setup EXE is missing embedded payload resources: $($missingResources -join ', ')"
+          }
+          Write-Host "Verified all $($requiredResources.Count) embedded payload resources."
+
           Write-Host "Created signed self-contained installer: $setupPath"
           Write-Host "Embedded payload size: $((Get-Item -LiteralPath $setupPath).Length) bytes"
           Get-FileHash -Path $setupPath -Algorithm SHA256 | Format-List
