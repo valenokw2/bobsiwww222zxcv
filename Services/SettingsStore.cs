@@ -95,25 +95,85 @@ namespace PixelOverlay.Services
             PublishChanged();
         }
 
-        public void AddImageAndSelect(ImageRecord item, OverlayState nextState)
+        public bool AddImageAndSelect(ImageRecord item, OverlayState nextState)
         {
-            if (item == null) return;
+            if (item == null) return false;
+            bool layerAdded;
             lock (_sync)
             {
-                if (!_loaded) return;
+                if (!_loaded) return false;
                 _library.RemoveAll(x => string.Equals(x.Id, item.Id, StringComparison.Ordinal));
                 _library.Insert(0, item.Clone());
                 _state = (nextState ?? _state).Clone();
-                _state.SelectedImageId = item.Id;
+                layerAdded = _state.AddLayer(new OverlayLayer { ImageId = item.Id });
                 MarkDirtyLocked();
             }
             PublishChanged();
+            return layerAdded;
         }
 
-        public async Task AddImageAndSelectAsync(ImageRecord item, OverlayState nextState)
+        public async Task<bool> AddImageAndSelectAsync(ImageRecord item, OverlayState nextState)
         {
-            AddImageAndSelect(item, nextState);
+            bool layerAdded = AddImageAndSelect(item, nextState);
             await FlushAsync();
+            return layerAdded;
+        }
+
+        public bool AddLayer(string imageId)
+        {
+            if (string.IsNullOrWhiteSpace(imageId)) return false;
+            bool added;
+            lock (_sync)
+            {
+                if (!_loaded || !_library.Any(x => string.Equals(x.Id, imageId, StringComparison.Ordinal)))
+                    return false;
+                added = _state.AddLayer(new OverlayLayer { ImageId = imageId });
+                if (added) MarkDirtyLocked();
+            }
+            if (added) PublishChanged();
+            return added;
+        }
+
+        public bool RemoveLayer(string layerId)
+        {
+            bool changed;
+            lock (_sync)
+            {
+                if (!_loaded) return false;
+                changed = _state.RemoveLayer(layerId);
+                if (changed) MarkDirtyLocked();
+            }
+            if (changed) PublishChanged();
+            return changed;
+        }
+
+        public bool MoveLayer(string layerId, int direction)
+        {
+            bool changed;
+            lock (_sync)
+            {
+                if (!_loaded) return false;
+                changed = _state.MoveLayer(layerId, direction);
+                if (changed) MarkDirtyLocked();
+            }
+            if (changed) PublishChanged();
+            return changed;
+        }
+
+        public bool ToggleFavorite(string imageId)
+        {
+            bool changed = false;
+            lock (_sync)
+            {
+                if (!_loaded) return false;
+                var item = _library.FirstOrDefault(x => string.Equals(x.Id, imageId, StringComparison.Ordinal));
+                if (item == null) return false;
+                item.IsFavorite = !item.IsFavorite;
+                changed = true;
+                MarkDirtyLocked();
+            }
+            if (changed) PublishChanged();
+            return changed;
         }
 
         public void RemoveImage(string imageId)
@@ -124,11 +184,9 @@ namespace PixelOverlay.Services
             {
                 if (!_loaded) return;
                 changed = _library.RemoveAll(x => string.Equals(x.Id, imageId, StringComparison.Ordinal)) > 0;
-                if (string.Equals(_state.SelectedImageId, imageId, StringComparison.Ordinal))
-                {
-                    _state.SelectedImageId = null;
-                    changed = true;
-                }
+                int layerCount = _state.Layers.Count;
+                _state.RemoveLayersForImage(imageId);
+                if (_state.Layers.Count != layerCount) changed = true;
                 if (changed) MarkDirtyLocked();
             }
             if (changed) PublishChanged();
