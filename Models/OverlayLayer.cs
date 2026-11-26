@@ -25,6 +25,7 @@ namespace PixelOverlay.Models
 
         // Runtime-only values. DataContractJsonSerializer ignores members without DataMember.
         private ImageSource _imageSource;
+        private string _displayName;
         private double _canvasLeft;
         private double _canvasTop;
         private double _surfaceWidth;
@@ -72,6 +73,12 @@ namespace PixelOverlay.Models
         {
             get => _imageSource;
             set => Set(ref _imageSource, value);
+        }
+
+        public string DisplayName
+        {
+            get => _displayName;
+            set => Set(ref _displayName, value);
         }
 
         public Visibility LayerVisibility => IsVisible ? Visibility.Visible : Visibility.Collapsed;
