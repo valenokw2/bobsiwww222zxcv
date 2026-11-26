@@ -119,8 +119,8 @@ namespace PixelOverlay.Models
             ImageId = other.ImageId;
             IsVisible = other.IsVisible;
             ZIndex = other.ZIndex;
-            Width = other.Width;
-            Height = other.Height;
+            if (other.Width > 0) Width = other.Width;
+            if (other.Height > 0) Height = other.Height;
             Opacity = other.Opacity;
             Scale = other.Scale;
             PositionX = other.PositionX;
