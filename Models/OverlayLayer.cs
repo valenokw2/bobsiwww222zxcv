@@ -26,6 +26,8 @@ namespace PixelOverlay.Models
         private ImageSource _imageSource;
         private double _canvasLeft;
         private double _canvasTop;
+        private double _surfaceWidth;
+        private double _surfaceHeight;
 
         public OverlayLayer() { SetDefaults(); }
 
@@ -55,8 +57,8 @@ namespace PixelOverlay.Models
         public string ImageId { get => _imageId; set => Set(ref _imageId, value); }
         public bool IsVisible { get => _isVisible; set => Set(ref _isVisible, value); }
         public int ZIndex { get => _zIndex; set => Set(ref _zIndex, Math.Max(0, Math.Min(29, value))); }
-        public double Width { get => _width; set { if (Set(ref _width, Clamp(value, 1, 8192, 180))) { Raise(nameof(TransformCenterX)); Reposition(_canvasLeft + _width / 2d, _canvasTop + _height / 2d); } } }
-        public double Height { get => _height; set { if (Set(ref _height, Clamp(value, 1, 8192, 180))) { Raise(nameof(TransformCenterY)); Reposition(_canvasLeft + _width / 2d, _canvasTop + _height / 2d); } } }
+        public double Width { get => _width; set { if (Set(ref _width, Clamp(value, 1, 8192, 180))) { Raise(nameof(TransformCenterX)); Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY); } } }
+        public double Height { get => _height; set { if (Set(ref _height, Clamp(value, 1, 8192, 180))) { Raise(nameof(TransformCenterY)); Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY); } } }
         public double Opacity { get => _opacity; set { if (Set(ref _opacity, Clamp(value, 0, 100, 100))) Raise(nameof(OpacityFactor)); } }
         public double Scale { get => _scale; set { if (Set(ref _scale, Clamp(value, 10, 500, 100))) Raise(nameof(ScaleFactor)); } }
         public double PositionX { get => _positionX; set { if (Set(ref _positionX, Clamp(value, -100000, 100000, 0))) Raise(nameof(PositionX)); } }
@@ -80,7 +82,9 @@ namespace PixelOverlay.Models
 
         public void UpdateCanvasPosition(double surfaceWidth, double surfaceHeight)
         {
-            Reposition(surfaceWidth / 2d + PositionX, surfaceHeight / 2d + PositionY);
+            _surfaceWidth = Math.Max(0, surfaceWidth);
+            _surfaceHeight = Math.Max(0, surfaceHeight);
+            Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY);
         }
 
         private void Reposition(double centerX, double centerY)
