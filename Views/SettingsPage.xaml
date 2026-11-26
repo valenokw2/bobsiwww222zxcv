@@ -152,7 +152,7 @@
                                 <Grid Padding="4" ColumnSpacing="5">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                    <Button Grid.Column="1" Tag="{Binding}" Content="☆" Click="ToggleFavorite_Click" Padding="6,2"/>
+                                    <Button Grid.Column="1" Tag="{Binding}" Content="{Binding FavoriteGlyph}" Click="ToggleFavorite_Click" Padding="6,2"/>
                                     <Button Grid.Column="2" Tag="{Binding}" Content="Remove" Click="RemoveImage_Click" Padding="6,2"/>
                                 </Grid>
                             </DataTemplate>
