@@ -75,6 +75,7 @@ namespace PixelOverlay.Models
         [DataMember(Order = 10)] public bool IsHidden { get; set; }
         [DataMember(Order = 11)] public bool GifPlaying { get; set; }
         [DataMember(Order = 12)] public bool VisibilityHotkeyEnabled { get; set; }
+        [DataMember(Order = 13)] public bool ClickThroughEnabled { get; set; }
 
         public WindowInstanceConfig() { SetDefaults(); }
 
@@ -131,7 +132,8 @@ namespace PixelOverlay.Models
                 FavoriteImageIds = FavoriteImageIds == null ? new List<string>() : new List<string>(FavoriteImageIds),
                 IsHidden = IsHidden,
                 GifPlaying = GifPlaying,
-                VisibilityHotkeyEnabled = VisibilityHotkeyEnabled
+                VisibilityHotkeyEnabled = VisibilityHotkeyEnabled,
+                ClickThroughEnabled = ClickThroughEnabled
             };
         }
 
