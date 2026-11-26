@@ -39,6 +39,7 @@ namespace PixelOverlay.Services
         private bool _loading;
         private bool _disposed;
         private bool _isPlaying = true;
+        private bool _isVisible = true;
         private double _playbackSpeed = 1;
         private int _generation;
 
@@ -51,21 +52,18 @@ namespace PixelOverlay.Services
 
         public async Task OpenAsync(StorageFile file, OverlayState playbackState)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(GifPlayer));
-            var generation = ++_generation;
-            Stop();
-            DisposeDecoder();
-            IRandomAccessStream memoryStream = null;
+            if (file == null) throw new ArgumentNullException(nameof(file));
+            var properties = await file.GetBasicPropertiesAsync();
+            if (properties.Size == 0 || properties.Size > MaxGifFileBytes)
+                throw new InvalidDataException("GIF files must be between 1 byte and 32 MiB.");
+
+            var buffer = await FileIO.ReadBufferAsync(file);
+            if (buffer.Length == 0 || buffer.Length > MaxGifFileBytes)
+                throw new InvalidDataException("GIF files must be between 1 byte and 32 MiB.");
+
+            var memoryStream = new InMemoryRandomAccessStream();
             try
             {
-                var properties = await file.GetBasicPropertiesAsync();
-                if (properties.Size == 0 || properties.Size > MaxGifFileBytes)
-                    throw new InvalidDataException("GIF files must be between 1 byte and 32 MiB.");
-
-                IBuffer buffer = await FileIO.ReadBufferAsync(file);
-                if (buffer.Length > MaxGifFileBytes)
-                    throw new InvalidDataException("GIF files larger than 32 MiB are not supported.");
-                memoryStream = new InMemoryRandomAccessStream();
                 using (var writer = new DataWriter(memoryStream))
                 {
                     writer.WriteBuffer(buffer);
@@ -73,10 +71,33 @@ namespace PixelOverlay.Services
                     writer.DetachStream();
                 }
                 memoryStream.Seek(0);
+                await OpenAsync(memoryStream, playbackState);
+                memoryStream = null;
+            }
+            finally
+            {
+                memoryStream?.Dispose();
+            }
+        }
 
-                if (!IsCurrent(generation)) { memoryStream.Dispose(); return; }
-                var decoder = await BitmapDecoder.CreateAsync(memoryStream);
-                if (!IsCurrent(generation)) { memoryStream.Dispose(); return; }
+        // Takes ownership of the supplied stream. AssetCacheService provides one clone
+        // per window, while the shared master stream remains reference-counted by its lease.
+        public async Task OpenAsync(IRandomAccessStream source, OverlayState playbackState)
+        {
+            if (source == null) throw new ArgumentNullException(nameof(source));
+            if (_disposed) throw new ObjectDisposedException(nameof(GifPlayer));
+            var generation = ++_generation;
+            Stop();
+            DisposeDecoder();
+            try
+            {
+                if (source.Size == 0 || source.Size > MaxGifFileBytes)
+                    throw new InvalidDataException("GIF files must be between 1 byte and 32 MiB.");
+
+                source.Seek(0);
+                if (!IsCurrent(generation)) return;
+                var decoder = await BitmapDecoder.CreateAsync(source);
+                if (!IsCurrent(generation)) return;
                 if (decoder.FrameCount == 0) throw new InvalidDataException("The GIF has no frames.");
 
                 var width = checked((int)decoder.PixelWidth);
@@ -88,8 +109,8 @@ namespace PixelOverlay.Services
                 if (pixelCount > MaxCanvasPixels)
                     throw new InvalidDataException("GIFs larger than 8 megapixels are not supported.");
 
-                _stream = memoryStream;
-                memoryStream = null;
+                _stream = source;
+                source = null;
                 _decoder = decoder;
                 _width = width;
                 _height = height;
@@ -102,7 +123,6 @@ namespace PixelOverlay.Services
             }
             catch
             {
-                memoryStream?.Dispose();
                 if (generation == _generation)
                 {
                     Stop();
@@ -110,6 +130,10 @@ namespace PixelOverlay.Services
                     _disposed = true;
                 }
                 throw;
+            }
+            finally
+            {
+                source?.Dispose();
             }
         }
 
@@ -126,7 +150,7 @@ namespace PixelOverlay.Services
             _timer.Stop();
             // A settings change can arrive while a frame is being decoded.
             // Keep the timer stopped until the in-flight frame finishes.
-            if (_decoder == null || _disposed || _loading || !_isPlaying || _decoder.FrameCount < 2) return;
+            if (_decoder == null || _disposed || _loading || !_isPlaying || !_isVisible || _decoder.FrameCount < 2) return;
             _timer.Interval = TimeSpan.FromMilliseconds(Math.Max(10, _lastDelayMs / _playbackSpeed));
             _timer.Start();
         }
@@ -303,6 +327,16 @@ namespace PixelOverlay.Services
         {
             if (centiseconds <= 1) return 100;
             return Math.Max(10, centiseconds * 10);
+        }
+
+        public void SetVisible(bool visible)
+        {
+            if (_disposed || _isVisible == visible) return;
+            _isVisible = visible;
+            if (!_isVisible)
+                _timer.Stop();
+            else
+                ScheduleNextFrame();
         }
 
         public void Stop() => _timer.Stop();
