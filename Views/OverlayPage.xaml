@@ -10,9 +10,9 @@
                VerticalAlignment="Stretch"
                Stretch="Uniform"
                IsHitTestVisible="False">
-            <Image.RenderTransform>
+            <toolkit:ImageEx.RenderTransform>
                 <CompositeTransform x:Name="OverlayTransform" />
-            </Image.RenderTransform>
+            </toolkit:ImageEx.RenderTransform>
         </toolkit:ImageEx>
         <TextBlock x:Name="Hint" Text="Open this widget's settings to import an image"
                    HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
