@@ -21,7 +21,7 @@
                     <muxc:NavigationViewItem.Icon><SymbolIcon Symbol="Pictures"/></muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="Overlay" Tag="overlay">
-                    <muxc:NavigationViewItem.Icon><SymbolIcon Symbol="Photo"/></muxc:NavigationViewItem.Icon>
+                    <muxc:NavigationViewItem.Icon><SymbolIcon Symbol="Edit"/></muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="Media search" Tag="media">
                     <muxc:NavigationViewItem.Icon><SymbolIcon Symbol="Find"/></muxc:NavigationViewItem.Icon>
@@ -209,7 +209,7 @@
                                     </DataTemplate>
                                 </ListView.ItemTemplate>
                             </ListView>
-                            <Divider/>
+                            <Rectangle Height="1" Fill="#40FFFFFF"/>
                             <TextBlock Text="Direct image import" FontWeight="SemiBold"/>
                             <TextBlock Text="Paste an HTTPS URL that returns an image file (not a Pinterest/GIPHY page). Downloads are capped at 32 MiB and checked against MIME type and file signature before saving locally." FontSize="11" Opacity=".7" TextWrapping="Wrap"/>
                             <TextBox x:Name="ImageUrlBox" Header="Direct image URL" PlaceholderText="https://…/image.gif"/>
