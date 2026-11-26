@@ -280,7 +280,7 @@ namespace PixelOverlay.Views
             finally { _loadingLayers.Remove(layerId); }
         }
 
-        private void ApplyInitialSize(OverlayLayer layer, uint pixelWidth, uint pixelHeight)
+        private void ApplyInitialSize(OverlayLayer layer, int pixelWidth, int pixelHeight)
         {
             if (layer.Width > 0 && layer.Height > 0) return;
             double width = Math.Max(1, pixelWidth);
