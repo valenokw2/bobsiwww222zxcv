@@ -11,6 +11,7 @@ using PixelOverlay.Services;
 using Windows.Storage;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Media.Imaging;
 using Windows.System;
 
 namespace PixelOverlay.Views
@@ -24,6 +25,7 @@ namespace PixelOverlay.Views
         private readonly ObservableCollection<OverlayLayer> _layers = new ObservableCollection<OverlayLayer>();
         private readonly Dictionary<string, GifPlayer> _gifPlayers = new Dictionary<string, GifPlayer>(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _loadedImageIds = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, BitmapImage> _staticImageCache = new Dictionary<string, BitmapImage>(StringComparer.Ordinal);
         private readonly HashSet<string> _loadingLayers = new HashSet<string>(StringComparer.Ordinal);
         private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
         private bool _cleanedUp;
@@ -89,6 +91,7 @@ namespace PixelOverlay.Views
             foreach (var player in _gifPlayers.Values) player.Dispose();
             _gifPlayers.Clear();
             _loadedImageIds.Clear();
+            _staticImageCache.Clear();
             _loadingLayers.Clear();
             _layers.Clear();
         }
@@ -134,6 +137,7 @@ namespace PixelOverlay.Views
                 UpdateVisibilityHotkey(state.VisibilityHotkeyEnabled);
 
                 SyncLayerCollection(state.Layers);
+                PruneStaticImageCache();
                 UpdateLayerPositions();
 
                 UpdateHint();
@@ -229,7 +233,12 @@ namespace PixelOverlay.Views
             {
                 // A bounded static decode is used for every layer. It supplies dimensions for
                 // the canvas and is also the fallback frame when the animation budget is full.
-                var bitmap = await _images.LoadBitmapAsync(item, 1280);
+                if (!_staticImageCache.TryGetValue(imageId, out var bitmap))
+                {
+                    bitmap = await _images.LoadBitmapAsync(item, 1280);
+                    if (!IsCurrentLayer(layerId, imageId)) return;
+                    _staticImageCache[imageId] = bitmap;
+                }
                 if (!IsCurrentLayer(layerId, imageId)) return;
                 ApplyInitialSize(layer, bitmap.PixelWidth, bitmap.PixelHeight);
                 layer.ImageSource = bitmap;
@@ -290,6 +299,15 @@ namespace PixelOverlay.Views
             double scale = Math.Min(1d, Math.Min(availableWidth / width, availableHeight / height));
             layer.Width = Math.Max(1, width * scale);
             layer.Height = Math.Max(1, height * scale);
+        }
+
+        private void PruneStaticImageCache()
+        {
+            var referenced = new HashSet<string>(_layers
+                .Where(x => !string.IsNullOrWhiteSpace(x.ImageId))
+                .Select(x => x.ImageId), StringComparer.Ordinal);
+            foreach (var key in _staticImageCache.Keys.Where(x => !referenced.Contains(x)).ToList())
+                _staticImageCache.Remove(key);
         }
 
         private void UpdateLayerPositions()
