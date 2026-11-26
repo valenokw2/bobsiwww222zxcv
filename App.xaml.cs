@@ -167,8 +167,12 @@ namespace PixelOverlay
 
         private static void OnNavigationFailed(object sender, NavigationFailedEventArgs e)
         {
-            AppDiagnostics.Log("Navigation failed", new InvalidOperationException(
-                "Failed to load " + e.SourcePageType.FullName));
+            var pageName = e.SourcePageType == null ? "<unknown page>" : e.SourcePageType.FullName;
+            var exception = e.Exception ?? new InvalidOperationException("Failed to load " + pageName);
+            AppDiagnostics.Log("Navigation failed: " + pageName, exception);
+
+            // We replace the failed frame with a visible fallback, so mark the event handled.
+            e.Handled = true;
             Window.Current.Content = new TextBlock
             {
                 Text = "Pixel Overlay could not open this page. See pixel-overlay-diagnostics.log."
