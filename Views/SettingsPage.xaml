@@ -134,6 +134,7 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="120"/>
                     </Grid.RowDefinitions>
                     <Grid Grid.Row="0" ColumnSpacing="8">
@@ -161,10 +162,16 @@
                     <Button Grid.Row="2" Content="＋ Add selected image as layer" Click="AddLayer_Click" Margin="0,6,0,6"/>
                     <Grid Grid.Row="3" ColumnSpacing="8">
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBox x:Name="ImageUrlBox" Header="Direct HTTPS image URL"
+                                 PlaceholderText="Paste a direct .png, .jpg, .gif or .webp URL"/>
+                        <Button Grid.Column="1" Content="Download and add" Click="ImportUrl_Click" VerticalAlignment="Bottom"/>
+                    </Grid>
+                    <Grid Grid.Row="4" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBox x:Name="ProfileNameBox" Header="Composition preset name" PlaceholderText="e.g. Desktop setup"/>
                         <Button Grid.Column="1" Content="Save composition" Click="SavePreset_Click" VerticalAlignment="Bottom"/>
                     </Grid>
-                    <ListView x:Name="ProfileList" Grid.Row="4" SelectionChanged="Profile_SelectionChanged">
+                    <ListView x:Name="ProfileList" Grid.Row="5" SelectionChanged="Profile_SelectionChanged">
                         <ListView.ItemTemplate>
                             <DataTemplate>
                                 <Grid Padding="3">
@@ -177,7 +184,6 @@
                         </ListView.ItemTemplate>
                     </ListView>
                 </Grid>
-            </PivotItem>
-        </Pivot>
+            </PivotItem>        </Pivot>
     </Grid>
 </Page>
