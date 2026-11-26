@@ -155,15 +155,22 @@ namespace PixelOverlay.Views
                     }
 
                     bool visible = layer.IsVisible && (_widget == null || _widget.Visible);
-                    if (_gifPlayers.TryGetValue(layer.LayerId, out var existingPlayer))
+                    bool shouldAnimate = visible && layer.GifPlaying;
+                    if (!shouldAnimate && _gifPlayers.TryGetValue(layer.LayerId, out var hiddenPlayer))
                     {
-                        existingPlayer.UpdateSchedule(CreatePlaybackState(layer));
-                        existingPlayer.SetVisible(visible);
+                        hiddenPlayer.Dispose();
+                        _gifPlayers.Remove(layer.LayerId);
+                        if (_staticImageCache.TryGetValue(item.Id, out var fallback))
+                            layer.ImageSource = fallback;
                     }
 
                     if (_loadedImageIds.TryGetValue(layer.LayerId, out var loadedId) &&
                         string.Equals(loadedId, item.Id, StringComparison.Ordinal))
+                    {
+                        if (item.IsGif && shouldAnimate && !_gifPlayers.ContainsKey(layer.LayerId))
+                            await EnsureGifPlayerAsync(layer, item);
                         continue;
+                    }
                     if (_loadingLayers.Contains(layer.LayerId)) continue;
 
                     await LoadLayerAsync(layer, item, visible);
@@ -231,8 +238,8 @@ namespace PixelOverlay.Views
             _loadingLayers.Add(layerId);
             try
             {
-                // A bounded static decode is used for every layer. It supplies dimensions for
-                // the canvas and is also the fallback frame when the animation budget is full.
+                // Decode once per unique library item. Repeated layers reuse the same
+                // BitmapImage and do not allocate another static texture.
                 if (!_staticImageCache.TryGetValue(imageId, out var bitmap))
                 {
                     bitmap = await _images.LoadBitmapAsync(item, 1280);
@@ -242,37 +249,10 @@ namespace PixelOverlay.Views
                 if (!IsCurrentLayer(layerId, imageId)) return;
                 ApplyInitialSize(layer, bitmap.PixelWidth, bitmap.PixelHeight);
                 layer.ImageSource = bitmap;
-
-                if (item.IsGif && _gifPlayers.Count < MaxAnimatedGifPlayers)
-                {
-                    var file = await _images.GetFileAsync(item);
-                    if (!IsCurrentLayer(layerId, imageId)) return;
-
-                    var player = new GifPlayer();
-                    player.FrameChanged += (s, e) =>
-                    {
-                        if (!_cleanedUp && IsCurrentLayer(layerId, imageId) &&
-                            _gifPlayers.TryGetValue(layerId, out var active) && ReferenceEquals(active, player))
-                            layer.ImageSource = player.CurrentFrame;
-                    };
-                    player.PlaybackFailed += (s, e) =>
-                    {
-                        if (!_cleanedUp && IsCurrentLayer(layerId, imageId))
-                            AppDiagnostics.Log("GIF layer playback", new InvalidOperationException("GIF layer playback stopped."));
-                    };
-                    _gifPlayers[layerId] = player;
-                    await player.OpenAsync(file, CreatePlaybackState(layer));
-                    if (!IsCurrentLayer(layerId, imageId))
-                    {
-                        player.Dispose();
-                        _gifPlayers.Remove(layerId);
-                        return;
-                    }
-                    layer.ImageSource = player.CurrentFrame;
-                    player.SetVisible(visible && layer.GifPlaying);
-                }
-
                 _loadedImageIds[layerId] = imageId;
+
+                if (item.IsGif && visible && layer.GifPlaying)
+                    await EnsureGifPlayerAsync(layer, item);
             }
             catch (Exception ex)
             {
@@ -282,11 +262,79 @@ namespace PixelOverlay.Views
                     failedPlayer.Dispose();
                     _gifPlayers.Remove(layerId);
                 }
-                // Keep the already decoded first frame as a static fallback when GIF playback fails.
-                if (IsCurrentLayer(layerId, imageId) && layer.ImageSource != null)
+                // Keep the decoded first frame as a static fallback when GIF playback fails.
+                if (IsCurrentLayer(layerId, imageId) &&
+                    _staticImageCache.TryGetValue(imageId, out var fallback))
+                {
+                    layer.ImageSource = fallback;
                     _loadedImageIds[layerId] = imageId;
+                }
             }
             finally { _loadingLayers.Remove(layerId); }
+        }
+
+        private async Task EnsureGifPlayerAsync(OverlayLayer layer, ImageRecord item)
+        {
+            if (_cleanedUp || layer == null || item == null || !item.IsGif ||
+                _gifPlayers.ContainsKey(layer.LayerId) || _gifPlayers.Count >= MaxAnimatedGifPlayers ||
+                !layer.IsVisible || (_widget != null && !_widget.Visible) || !layer.GifPlaying)
+                return;
+
+            var layerId = layer.LayerId;
+            var imageId = item.Id;
+            GifPlayer player = null;
+            try
+            {
+                var file = await _images.GetFileAsync(item);
+                if (!IsCurrentLayer(layerId, imageId) || _cleanedUp) return;
+
+                player = new GifPlayer();
+                player.FrameChanged += (s, e) =>
+                {
+                    if (!_cleanedUp && IsCurrentLayer(layerId, imageId) &&
+                        _gifPlayers.TryGetValue(layerId, out var active) && ReferenceEquals(active, player))
+                        layer.ImageSource = player.CurrentFrame;
+                };
+                player.PlaybackFailed += (s, e) =>
+                {
+                    if (!_cleanedUp && IsCurrentLayer(layerId, imageId))
+                        AppDiagnostics.Log("GIF layer playback", new InvalidOperationException("GIF layer playback stopped."));
+                };
+
+                // Reserve the slot before awaiting decoder initialization so no other
+                // layer can race into the same animation budget.
+                _gifPlayers[layerId] = player;
+                await player.OpenAsync(file, CreatePlaybackState(layer));
+                if (!IsCurrentLayer(layerId, imageId) || _cleanedUp ||
+                    !layer.IsVisible || (_widget != null && !_widget.Visible) || !layer.GifPlaying)
+                {
+                    player.Dispose();
+                    if (_gifPlayers.TryGetValue(layerId, out var stale) && ReferenceEquals(stale, player))
+                        _gifPlayers.Remove(layerId);
+                    if (_staticImageCache.TryGetValue(imageId, out var fallback) && IsCurrentLayer(layerId, imageId))
+                        layer.ImageSource = fallback;
+                    return;
+                }
+
+                layer.ImageSource = player.CurrentFrame;
+                player.SetVisible(true);
+            }
+            catch (Exception ex)
+            {
+                if (player != null)
+                {
+                    player.Dispose();
+                    if (_gifPlayers.TryGetValue(layerId, out var failed) && ReferenceEquals(failed, player))
+                        _gifPlayers.Remove(layerId);
+                }
+                if (IsCurrentLayer(layerId, imageId) &&
+                    _staticImageCache.TryGetValue(imageId, out var fallback))
+                {
+                    layer.ImageSource = fallback;
+                    _loadedImageIds[layerId] = imageId;
+                }
+                AppDiagnostics.Log("Initialize GIF layer", ex);
+            }
         }
 
         private void ApplyInitialSize(OverlayLayer layer, int pixelWidth, int pixelHeight)
