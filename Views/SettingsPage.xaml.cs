@@ -293,8 +293,9 @@ namespace PixelOverlay.Views
             OverlayWindowLabel.Text = "Editing " + _windowId;
             var config = SettingsStore.Current.GetWindowConfig(_windowId);
             WindowVisibilityStatusText.Text = config.IsHidden ? "Visibility: hidden" : "Visibility: visible";
-            ClickThroughStatusText.Text = _widget == null ? "Settings opened outside Game Bar." :
-                "Settings widget click-through: " + (_widget.ClickThroughEnabled ? "enabled" : "disabled");
+            ClickThroughStatusText.Text = "Selected overlay click-through: " +
+                (config.ClickThroughEnabled ? "enabled" : "disabled") +
+                " (change it from the Game Bar widget title bar)";
         }
 
         private async void Import_Click(object sender, RoutedEventArgs e)
