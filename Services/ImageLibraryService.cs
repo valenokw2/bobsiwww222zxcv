@@ -2,6 +2,9 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Toolkit.Uwp.UI;
@@ -249,6 +252,33 @@ namespace PixelOverlay.Services
             }
         }
 
+        private sealed class LocalAssetMessageHandler : HttpMessageHandler
+        {
+            protected override async Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (request.RequestUri == null || !request.RequestUri.IsFile)
+                    return new HttpResponseMessage(HttpStatusCode.BadRequest);
+
+                var libraryPath = ApplicationData.Current.LocalFolder.Path +
+                    Path.DirectorySeparatorChar + FolderName + Path.DirectorySeparatorChar;
+                var localPath = Path.GetFullPath(request.RequestUri.LocalPath);
+                if (!localPath.StartsWith(libraryPath, StringComparison.OrdinalIgnoreCase))
+                    return new HttpResponseMessage(HttpStatusCode.Forbidden);
+
+                var file = await StorageFile.GetFileFromPathAsync(localPath);
+                var randomAccessStream = await file.OpenReadAsync();
+                var content = new StreamContent(randomAccessStream.AsStreamForRead());
+                var extension = Path.GetExtension(localPath).ToLowerInvariant();
+                string mediaType = extension == ".png" ? "image/png" :
+                    (extension == ".gif" ? "image/gif" :
+                    (extension == ".webp" ? "image/webp" : "image/jpeg"));
+                content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+            }
+        }
+
         private static Task EnsureImageCacheInitializedAsync()
         {
             lock (ImageCacheSync)
@@ -258,7 +288,7 @@ namespace PixelOverlay.Services
                     ImageCache.Instance.MaxMemoryCacheCount = 16;
                     ImageCache.Instance.CacheDuration = TimeSpan.FromDays(14);
                     ImageCacheInitialization = ImageCache.Instance.InitializeAsync(
-                        ApplicationData.Current.LocalFolder, "StaticImageCache");
+                        ApplicationData.Current.LocalFolder, "StaticImageCache", new LocalAssetMessageHandler());
                 }
                 return ImageCacheInitialization;
             }
