@@ -307,7 +307,7 @@ namespace PixelOverlay.Views
                         var dimensions = bitmapSource as Windows.UI.Xaml.Media.Imaging.BitmapImage;
                         double sourceWidth = Math.Max(1, dimensions?.PixelWidth ?? 768);
                         double sourceHeight = Math.Max(1, dimensions?.PixelHeight ?? 768);
-                        double fit = Math.Min(1d, Math.Min(240d / sourceWidth, 140d / sourceHeight));
+                        double fit = Math.Min(1d, OverlayLayer.DefaultMaxEdge / Math.Max(sourceWidth, sourceHeight));
                         layer.Width = Math.Max(1, sourceWidth * fit);
                         layer.Height = Math.Max(1, sourceHeight * fit);
                     }
