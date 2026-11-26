@@ -275,7 +275,7 @@ namespace PixelOverlay.Views
                     layer.ImageSource = null;
                     continue;
                 }
-            {
+
                 if (_cleanedUp || generation != _previewLoadGeneration) return;
                 var item = _library.FirstOrDefault(x => string.Equals(x.Id, layer.ImageId, StringComparison.Ordinal));
                 if (item == null)
@@ -318,8 +318,6 @@ namespace PixelOverlay.Views
                     AppDiagnostics.Log("Settings layer preview", ex);
                     if (generation == _previewLoadGeneration) layer.ImageSource = null;
                 }
-            }
-
             }
 
             EmptyPreview.Visibility = _layers.Any(x => x.IsVisible && x.ImageSource != null)
