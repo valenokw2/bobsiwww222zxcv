@@ -16,7 +16,7 @@ namespace PixelOverlay.Services
         public const long MaxCacheBytes = 180L * 1024L * 1024L;
         private const ulong MaxGifBytes = 32UL * 1024UL * 1024UL;
 
-        private sealed class Entry
+        internal sealed class Entry
         {
             public string Id;
             public InMemoryRandomAccessStream Stream;
