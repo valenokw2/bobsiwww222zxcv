@@ -160,26 +160,23 @@ namespace PixelOverlay.Services
             if (properties.Size == 0 || properties.Size > MaxGifBytes)
                 throw new InvalidOperationException("GIF files must be between 1 byte and 32 MiB.");
 
-            var buffer = await FileIO.ReadBufferAsync(file);
-            if (buffer.Length == 0 || buffer.Length > MaxGifBytes)
-                throw new InvalidOperationException("GIF files must be between 1 byte and 32 MiB.");
-
             var stream = new InMemoryRandomAccessStream();
             try
             {
-                using (var writer = new DataWriter(stream))
+                using (var source = await file.OpenAsync(FileAccessMode.Read))
                 {
-                    writer.WriteBuffer(buffer);
-                    await writer.StoreAsync();
-                    await writer.FlushAsync();
-                    writer.DetachStream();
+                    await RandomAccessStream.CopyAsync(source, stream);
                 }
+
+                if (stream.Size == 0 || stream.Size > MaxGifBytes)
+                    throw new InvalidOperationException("GIF files must be between 1 byte and 32 MiB.");
+
                 stream.Seek(0);
                 return new Entry
                 {
                     Id = item.Id,
                     Stream = stream,
-                    Size = (long)buffer.Length,
+                    Size = (long)stream.Size,
                     References = 0
                 };
             }
