@@ -19,16 +19,19 @@ namespace PixelOverlay.Views
     {
         private readonly ImageLibraryService _images = new ImageLibraryService();
         private readonly ObservableCollection<ImageRecord> _library = new ObservableCollection<ImageRecord>();
+        private readonly ObservableCollection<ImageRecord> _libraryView = new ObservableCollection<ImageRecord>();
+        private readonly ObservableCollection<OverlayLayer> _layers = new ObservableCollection<OverlayLayer>();
         private readonly ObservableCollection<OverlayProfile> _profiles = new ObservableCollection<OverlayProfile>();
         private XboxGameBarWidget _widget;
         private XboxGameBarWidgetControl _widgetControl;
         private OverlayState _state = new OverlayState();
-        private ImageRecord _selected;
+        private ImageRecord _selectedLibraryItem;
         private bool _dragging;
         private Windows.Foundation.Point _dragStart;
         private double _originX, _originY;
         private int _previewLoadGeneration;
-        private bool _restoringSelection;
+        private bool _restoringLayerSelection;
+        private bool _restoringLibrarySelection;
         private bool _applyingStoreSnapshot;
         private bool _cleanedUp;
         private bool _dialogOpen;
@@ -55,8 +58,10 @@ namespace PixelOverlay.Views
                 if (_cleanedUp) return;
 
                 DataContext = _state;
-                LibraryList.ItemsSource = _library;
+                LibraryList.ItemsSource = _libraryView;
+                LayerList.ItemsSource = _layers;
                 ProfileList.ItemsSource = _profiles;
+                PreviewLayers.ItemsSource = _layers;
                 _state.PropertyChanged += LocalState_PropertyChanged;
                 SettingsStore.Current.StateChanged += Store_StateChanged;
                 await ApplyStoreSnapshotAsync(SettingsStore.Current.GetSnapshot(), true);
@@ -79,21 +84,24 @@ namespace PixelOverlay.Views
             _state.PropertyChanged -= LocalState_PropertyChanged;
             _previewLoadGeneration++;
             _dragging = false;
+            _layers.Clear();
+            _libraryView.Clear();
         }
 
         private void LocalState_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             if (_cleanedUp || _applyingStoreSnapshot) return;
-            // Derived text labels do not change persisted state; ignore their notifications.
             if (e.PropertyName == nameof(OverlayState.OpacityText) ||
                 e.PropertyName == nameof(OverlayState.ScaleText) ||
                 e.PropertyName == nameof(OverlayState.RotationText) ||
                 e.PropertyName == nameof(OverlayState.GifSpeedText))
                 return;
+
             try
             {
                 SettingsStore.Current.UpdateState(_state);
-                UpdatePreviewTransform();
+                SyncLayerViews(_state.Layers);
+                UpdatePreviewPositions();
                 UpdateControls();
             }
             catch (Exception ex) { AppDiagnostics.Log("Settings local state update", ex); }
@@ -122,21 +130,22 @@ namespace PixelOverlay.Views
         private async Task ApplyStoreSnapshotAsync(PersistedSettings snapshot, bool forcePreviewReload)
         {
             if (_cleanedUp || snapshot == null) return;
-            var previousId = _selected?.Id;
+            var previousLayerIds = string.Join("|", _layers.Select(x => x.LayerId + ":" + x.ImageId));
             _applyingStoreSnapshot = true;
             try
             {
                 _state.CopyFrom(snapshot.State ?? new OverlayState());
 
-                // Slider changes are frequent. Keep existing XAML item containers and
-                // selection stable unless the underlying library actually changed.
                 if (!LibraryMatches(snapshot.Library))
                 {
                     _library.Clear();
                     if (snapshot.Library != null)
                         foreach (var item in snapshot.Library)
                             if (item != null) _library.Add(item.Clone());
+                    RefreshLibraryView();
                 }
+
+                SyncLayerViews(_state.Layers);
 
                 if (!ProfilesMatch(snapshot.Profiles))
                 {
@@ -146,111 +155,148 @@ namespace PixelOverlay.Views
                             if (profile != null) _profiles.Add(profile.Clone());
                 }
 
-                _selected = _library.FirstOrDefault(x =>
-                    string.Equals(x.Id, _state.SelectedImageId, StringComparison.Ordinal));
-                _restoringSelection = true;
-                try { LibraryList.SelectedItem = _selected; }
-                finally { _restoringSelection = false; }
+                _selectedLibraryItem = _selectedLibraryItem == null
+                    ? null
+                    : _library.FirstOrDefault(x => string.Equals(x.Id, _selectedLibraryItem.Id, StringComparison.Ordinal));
+                _restoringLibrarySelection = true;
+                try { LibraryList.SelectedItem = _selectedLibraryItem; }
+                finally { _restoringLibrarySelection = false; }
+
+                _restoringLayerSelection = true;
+                try
+                {
+                    LayerList.SelectedItem = _layers.FirstOrDefault(x =>
+                        string.Equals(x.LayerId, _state.SelectedLayerId, StringComparison.Ordinal));
+                }
+                finally { _restoringLayerSelection = false; }
             }
             finally { _applyingStoreSnapshot = false; }
 
-            UpdatePreviewTransform();
+            UpdatePreviewPositions();
             UpdateControls();
-            if (forcePreviewReload || !string.Equals(previousId, _selected?.Id, StringComparison.Ordinal))
-                await LoadPreviewAsync();
+            var currentLayerIds = string.Join("|", _layers.Select(x => x.LayerId + ":" + x.ImageId));
+            if (forcePreviewReload || !string.Equals(previousLayerIds, currentLayerIds, StringComparison.Ordinal))
+                _previewLoadGeneration++;
+            await LoadPreviewLayersAsync();
+        }
+
+        private void SyncLayerViews(IList<OverlayLayer> source)
+        {
+            var old = _layers.ToDictionary(x => x.LayerId, x => x, StringComparer.Ordinal);
+            var next = new List<OverlayLayer>();
+            foreach (var item in (source ?? new List<OverlayLayer>()).Where(x => x != null).OrderBy(x => x.ZIndex))
+            {
+                if (old.TryGetValue(item.LayerId, out var view))
+                {
+                    bool sameImage = string.Equals(view.ImageId, item.ImageId, StringComparison.Ordinal);
+                    view.CopyFrom(item);
+                    if (!sameImage) view.ImageSource = null;
+                }
+                else
+                    view = item.Clone();
+
+                var record = _library.FirstOrDefault(x => string.Equals(x.Id, item.ImageId, StringComparison.Ordinal));
+                view.DisplayName = record == null ? "Missing image" : record.DisplayName;
+                next.Add(view);
+            }
+
+            _layers.Clear();
+            foreach (var item in next) _layers.Add(item);
         }
 
         private bool LibraryMatches(IList<ImageRecord> source)
         {
-            int sourceCount = source == null ? 0 : source.Count;
-            if (_library.Count != sourceCount) return false;
-
-            for (int i = 0; i < sourceCount; i++)
+            int count = source == null ? 0 : source.Count;
+            if (_library.Count != count) return false;
+            for (int i = 0; i < count; i++)
             {
-                var left = _library[i];
-                var right = source[i];
-                if (left == null || right == null) return false;
-                if (!string.Equals(left.Id, right.Id, StringComparison.Ordinal) ||
-                    !string.Equals(left.StoredName, right.StoredName, StringComparison.Ordinal) ||
-                    !string.Equals(left.DisplayName, right.DisplayName, StringComparison.Ordinal) ||
-                    !string.Equals(left.Extension, right.Extension, StringComparison.OrdinalIgnoreCase) ||
-                    left.AddedAt != right.AddedAt)
+                var a = _library[i];
+                var b = source[i];
+                if (a == null || b == null ||
+                    !string.Equals(a.Id, b.Id, StringComparison.Ordinal) ||
+                    !string.Equals(a.StoredName, b.StoredName, StringComparison.Ordinal) ||
+                    !string.Equals(a.DisplayName, b.DisplayName, StringComparison.Ordinal) ||
+                    !string.Equals(a.Extension, b.Extension, StringComparison.OrdinalIgnoreCase) ||
+                    a.AddedAt != b.AddedAt || a.IsFavorite != b.IsFavorite)
                     return false;
             }
-
             return true;
         }
 
         private bool ProfilesMatch(IList<OverlayProfile> source)
         {
-            int sourceCount = source == null ? 0 : source.Count;
-            if (_profiles.Count != sourceCount) return false;
-
-            for (int i = 0; i < sourceCount; i++)
+            int count = source == null ? 0 : source.Count;
+            if (_profiles.Count != count) return false;
+            for (int i = 0; i < count; i++)
             {
-                var left = _profiles[i];
-                var right = source[i];
-                if (left == null || right == null) return false;
-                if (!string.Equals(left.Name, right.Name, StringComparison.Ordinal) ||
-                    left.Opacity != right.Opacity ||
-                    left.Scale != right.Scale ||
-                    left.PositionX != right.PositionX ||
-                    left.PositionY != right.PositionY ||
-                    left.Rotation != right.Rotation ||
-                    left.GifSpeed != right.GifSpeed ||
-                    left.GifPlaying != right.GifPlaying)
+                var a = _profiles[i];
+                var b = source[i];
+                if (a == null || b == null || !string.Equals(a.Name, b.Name, StringComparison.Ordinal) ||
+                    a.SelectedLayerId != b.SelectedLayerId || a.Layers?.Count != b.Layers?.Count)
+                    return false;
+                if (a.Layers != null)
+                {
+                    for (int layerIndex = 0; layerIndex < a.Layers.Count; layerIndex++)
+                        if (!LayersMatch(a.Layers[layerIndex], b.Layers[layerIndex])) return false;
+                }
+                else if (a.Opacity != b.Opacity || a.Scale != b.Scale || a.PositionX != b.PositionX ||
+                    a.PositionY != b.PositionY || a.Rotation != b.Rotation ||
+                    a.GifSpeed != b.GifSpeed || a.GifPlaying != b.GifPlaying)
                     return false;
             }
-
             return true;
         }
 
-        private async Task LoadPreviewAsync()
+        private static bool LayersMatch(OverlayLayer a, OverlayLayer b)
         {
-            var item = _selected;
-            var generation = ++_previewLoadGeneration;
-            PreviewImage.Source = null;
-            if (item == null)
-            {
-                EmptyPreview.Text = "PNG, JPG, JPEG or GIF\nDrop here or import an image";
-                EmptyPreview.Visibility = Visibility.Visible;
-                UpdatePreviewTransform();
-                UpdateControls();
-                return;
-            }
-
-            try
-            {
-                var bitmap = await _images.LoadBitmapAsync(item, 1280);
-                if (_cleanedUp || generation != _previewLoadGeneration ||
-                    !string.Equals(_selected?.Id, item.Id, StringComparison.Ordinal)) return;
-                PreviewImage.Source = bitmap;
-                EmptyPreview.Visibility = Visibility.Collapsed;
-            }
-            catch (Exception ex)
-            {
-                AppDiagnostics.Log("Settings image preview", ex);
-                if (_cleanedUp || generation != _previewLoadGeneration ||
-                    !string.Equals(_selected?.Id, item.Id, StringComparison.Ordinal)) return;
-                PreviewImage.Source = null;
-                EmptyPreview.Text = "Image could not be opened";
-                EmptyPreview.Visibility = Visibility.Visible;
-            }
-
-            UpdatePreviewTransform();
-            UpdateControls();
+            return a != null && b != null &&
+                a.LayerId == b.LayerId && a.ImageId == b.ImageId && a.IsVisible == b.IsVisible &&
+                a.ZIndex == b.ZIndex && a.Width == b.Width && a.Height == b.Height &&
+                a.Opacity == b.Opacity && a.Scale == b.Scale && a.PositionX == b.PositionX &&
+                a.PositionY == b.PositionY && a.Rotation == b.Rotation &&
+                a.GifSpeed == b.GifSpeed && a.GifPlaying == b.GifPlaying;
         }
 
-        private void UpdatePreviewTransform()
+        private async Task LoadPreviewLayersAsync()
         {
-            if (PreviewTransform == null || PreviewSurface == null) return;
-            PreviewTransform.CenterX = PreviewSurface.ActualWidth / 2d;
-            PreviewTransform.CenterY = PreviewSurface.ActualHeight / 2d;
-            PreviewImage.Opacity = _state.Opacity / 100d;
-            PreviewTransform.ScaleX = PreviewTransform.ScaleY = _state.Scale / 100d;
-            PreviewTransform.TranslateX = _state.PositionX;
-            PreviewTransform.TranslateY = _state.PositionY;
-            PreviewTransform.Rotation = _state.Rotation;
+            var generation = _previewLoadGeneration;
+            foreach (var layer in _layers.ToList())
+            {
+                if (_cleanedUp || generation != _previewLoadGeneration) return;
+                var item = _library.FirstOrDefault(x => string.Equals(x.Id, layer.ImageId, StringComparison.Ordinal));
+                if (item == null)
+                {
+                    layer.ImageSource = null;
+                    layer.DisplayName = "Missing image";
+                    continue;
+                }
+
+                layer.DisplayName = item.DisplayName;
+                if (layer.ImageSource != null) continue;
+                try
+                {
+                    var bitmap = await _images.LoadBitmapAsync(item, 768);
+                    if (_cleanedUp || generation != _previewLoadGeneration ||
+                        !_layers.Contains(layer) || !string.Equals(layer.ImageId, item.Id, StringComparison.Ordinal))
+                        return;
+                    layer.ImageSource = bitmap;
+                }
+                catch (Exception ex)
+                {
+                    AppDiagnostics.Log("Settings layer preview", ex);
+                    if (generation == _previewLoadGeneration) layer.ImageSource = null;
+                }
+            }
+
+            EmptyPreview.Visibility = _layers.Any(x => x.IsVisible && x.ImageSource != null)
+                ? Visibility.Collapsed : Visibility.Visible;
+            UpdatePreviewPositions();
+        }
+
+        private void UpdatePreviewPositions()
+        {
+            foreach (var layer in _layers)
+                layer.UpdateCanvasPosition(PreviewSurface.ActualWidth, PreviewSurface.ActualHeight);
         }
 
         private void PreviewSurface_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -259,16 +305,42 @@ namespace PixelOverlay.Views
             {
                 Rect = new Windows.Foundation.Rect(0, 0, e.NewSize.Width, e.NewSize.Height)
             };
-            UpdatePreviewTransform();
+            UpdatePreviewPositions();
+        }
+
+        private void RefreshLibraryView()
+        {
+            var selected = LibraryFilterSelector.SelectedItem as ComboBoxItem;
+            string filter = selected?.Tag as string ?? "all";
+            IEnumerable<ImageRecord> items = _library;
+            if (filter == "favorites") items = items.Where(x => x.IsFavorite);
+            else if (filter == "gif") items = items.Where(x => x.IsGif);
+
+            _libraryView.Clear();
+            foreach (var item in items) _libraryView.Add(item);
+        }
+
+        private void LibraryFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_library == null || LibraryList == null) return;
+            RefreshLibraryView();
         }
 
         private void UpdateControls()
         {
-            if (GifControls == null || PlayPauseButton == null) return;
-            GifControls.Visibility = _selected?.IsGif == true ? Visibility.Visible : Visibility.Collapsed;
-            PlayPauseButton.Content = _state.GifPlaying ? "Pause GIF" : "Play GIF";
-            HideOverlayButton.IsEnabled = _widgetControl != null;
-            ShowOverlayButton.IsEnabled = _widgetControl != null;
+            var active = _state.SelectedLayer;
+            bool hasLayer = active != null;
+            OpacitySlider.IsEnabled = hasLayer;
+            ScaleSlider.IsEnabled = hasLayer;
+            RotationSlider.IsEnabled = hasLayer;
+            PositionXBox.IsEnabled = hasLayer;
+            PositionYBox.IsEnabled = hasLayer;
+            GifSpeedSlider.IsEnabled = hasLayer && _library.FirstOrDefault(x => x.Id == active.ImageId)?.IsGif == true;
+            GifControls.Visibility = hasLayer && _library.FirstOrDefault(x => x.Id == active.ImageId)?.IsGif == true
+                ? Visibility.Visible : Visibility.Collapsed;
+            bool hasWidget = _widgetControl != null;
+            HideOverlayButton.IsEnabled = hasWidget;
+            ShowOverlayButton.IsEnabled = hasWidget;
         }
 
         private async void Import_Click(object sender, RoutedEventArgs e)
@@ -277,9 +349,8 @@ namespace PixelOverlay.Views
             {
                 var item = await _images.PickAndImportAsync();
                 if (item == null || _cleanedUp) return;
-                var nextState = _state.Clone();
-                nextState.SelectedImageId = item.Id;
-                await SettingsStore.Current.AddImageAndSelectAsync(item, nextState);
+                bool added = await SettingsStore.Current.AddImageAndSelectAsync(item, _state);
+                if (!added) ShowError("The image was imported into the library, but the scene already has 30 layers.");
             }
             catch (Exception ex) { ShowError("Cannot import this image: " + ex.Message); }
         }
@@ -294,9 +365,8 @@ namespace PixelOverlay.Views
                 if (file == null || _cleanedUp) return;
                 var item = await _images.ImportAsync(file);
                 if (_cleanedUp) return;
-                var nextState = _state.Clone();
-                nextState.SelectedImageId = item.Id;
-                await SettingsStore.Current.AddImageAndSelectAsync(item, nextState);
+                bool added = await SettingsStore.Current.AddImageAndSelectAsync(item, _state);
+                if (!added) ShowError("The file was imported into the library, but the scene already has 30 layers.");
             }
             catch (Exception ex) { ShowError("Cannot import dropped file: " + ex.Message); }
             finally { deferral.Complete(); }
@@ -308,19 +378,97 @@ namespace PixelOverlay.Views
                 ? DataPackageOperation.Copy : DataPackageOperation.None;
         }
 
-        private async void Library_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void Library_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_restoringLibrarySelection) return;
+            _selectedLibraryItem = LibraryList.SelectedItem as ImageRecord;
+            AddLayerButtonEnabled();
+        }
+
+        private void AddLayerButtonEnabled()
+        {
+            // The button is also guarded in its click handler; this method exists to keep
+            // selection changes side-effect free.
+        }
+
+        private async void AddLayer_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedLibraryItem == null) return;
             try
             {
-                if (_restoringSelection || !(LibraryList.SelectedItem is ImageRecord item)) return;
-                _selected = item;
-                _state.SelectedImageId = item.Id;
-                // The selection handler synchronously updates the store; force the pending
-                // debounce to disk before returning to the game or closing Settings.
+                if (!SettingsStore.Current.AddLayer(_selectedLibraryItem.Id))
+                {
+                    ShowError(_state.Layers.Count >= OverlayState.MaxLayers
+                        ? "The scene already contains 30 layers."
+                        : "The selected library item could not be added.");
+                    return;
+                }
                 await SettingsStore.Current.FlushAsync();
-                await LoadPreviewAsync();
             }
-            catch (Exception ex) { AppDiagnostics.Log("Library selection changed", ex); }
+            catch (Exception ex) { AppDiagnostics.Log("Add layer", ex); ShowError("Could not add layer: " + ex.Message); }
+        }
+
+        private async void LayerList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_restoringLayerSelection || !(LayerList.SelectedItem is OverlayLayer layer)) return;
+            try
+            {
+                _state.SelectedLayerId = layer.LayerId;
+                SettingsStore.Current.UpdateState(_state);
+                await SettingsStore.Current.FlushAsync();
+                UpdateControls();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Select layer", ex); }
+        }
+
+        private async void ToggleLayerVisibility_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(((FrameworkElement)sender).Tag is OverlayLayer item)) return;
+            try
+            {
+                var layer = _state.Layers.FirstOrDefault(x => x.LayerId == item.LayerId);
+                if (layer == null) return;
+                layer.IsVisible = !layer.IsVisible;
+                SettingsStore.Current.UpdateState(_state);
+                await SettingsStore.Current.FlushAsync();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Toggle layer visibility", ex); }
+        }
+
+        private async void MoveLayerUp_Click(object sender, RoutedEventArgs e) => await MoveLayerAsync(sender, 1);
+        private async void MoveLayerDown_Click(object sender, RoutedEventArgs e) => await MoveLayerAsync(sender, -1);
+
+        private async Task MoveLayerAsync(object sender, int direction)
+        {
+            if (!(((FrameworkElement)sender).Tag is OverlayLayer item)) return;
+            try
+            {
+                if (SettingsStore.Current.MoveLayer(item.LayerId, direction))
+                    await SettingsStore.Current.FlushAsync();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Reorder layer", ex); }
+        }
+
+        private async void RemoveLayer_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(((FrameworkElement)sender).Tag is OverlayLayer item)) return;
+            try
+            {
+                SettingsStore.Current.RemoveLayer(item.LayerId);
+                await SettingsStore.Current.FlushAsync();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Remove layer", ex); }
+        }
+
+        private async void ToggleFavorite_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(((FrameworkElement)sender).Tag is ImageRecord item)) return;
+            try
+            {
+                SettingsStore.Current.ToggleFavorite(item.Id);
+                await SettingsStore.Current.FlushAsync();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Toggle image favorite", ex); }
         }
 
         private async void RemoveImage_Click(object sender, RoutedEventArgs e)
@@ -329,8 +477,7 @@ namespace PixelOverlay.Views
             try
             {
                 await _images.DeleteAsync(item);
-                if (!_cleanedUp)
-                    await ApplyStoreSnapshotAsync(SettingsStore.Current.GetSnapshot(), false);
+                await SettingsStore.Current.FlushAsync();
             }
             catch (Exception ex)
             {
@@ -364,10 +511,10 @@ namespace PixelOverlay.Views
         private void Center_Click(object sender, RoutedEventArgs e) => _state.Center();
         private void Reset_Click(object sender, RoutedEventArgs e) => _state.ResetTransform();
         private void ResetRotation_Click(object sender, RoutedEventArgs e) => _state.Rotation = 0;
-        private void PlayPause_Click(object sender, RoutedEventArgs e) => _state.GifPlaying = !_state.GifPlaying;
 
         private void Preview_PointerPressed(object sender, PointerRoutedEventArgs e)
         {
+            if (_state.SelectedLayer == null) return;
             _dragging = true;
             _dragStart = e.GetCurrentPoint(PreviewSurface).Position;
             _originX = _state.PositionX;
@@ -377,7 +524,7 @@ namespace PixelOverlay.Views
 
         private void Preview_PointerMoved(object sender, PointerRoutedEventArgs e)
         {
-            if (!_dragging) return;
+            if (!_dragging || _state.SelectedLayer == null) return;
             var point = e.GetCurrentPoint(PreviewSurface).Position;
             _state.PositionX = Math.Round(_originX + point.X - _dragStart.X);
             _state.PositionY = Math.Round(_originY + point.Y - _dragStart.Y);
@@ -397,17 +544,23 @@ namespace PixelOverlay.Views
             var name = ProfileNameBox.Text?.Trim();
             if (string.IsNullOrWhiteSpace(name))
             {
-                ShowError("Enter a preset name first.");
+                ShowError("Enter a composition preset name first.");
                 return;
             }
             SettingsStore.Current.SaveProfile(_state.Snapshot(name));
             ProfileNameBox.Text = string.Empty;
         }
 
-        private void ApplyPreset_Click(object sender, RoutedEventArgs e)
+        private async void ApplyPreset_Click(object sender, RoutedEventArgs e)
         {
-            if (((FrameworkElement)sender).Tag is OverlayProfile profile)
+            if (!(((FrameworkElement)sender).Tag is OverlayProfile profile)) return;
+            try
+            {
                 _state.Apply(profile);
+                SettingsStore.Current.UpdateState(_state);
+                await SettingsStore.Current.FlushAsync();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Apply composition preset", ex); ShowError("Could not apply preset: " + ex.Message); }
         }
 
         private void RemovePreset_Click(object sender, RoutedEventArgs e)
