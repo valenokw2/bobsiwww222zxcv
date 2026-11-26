@@ -115,9 +115,12 @@ namespace PixelOverlay.Views
         {
             try
             {
-                _gif?.SetVisible(sender != null && sender.Visible);
-                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal,
-                    () => { _ = RefreshSafelyAsync(); });
+                bool visible = sender != null && sender.Visible;
+                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
+                {
+                    _gif?.SetVisible(visible);
+                    _ = RefreshSafelyAsync();
+                });
             }
             catch (Exception ex) { AppDiagnostics.Log("Game Bar widget state update", ex); }
         }
@@ -336,9 +339,15 @@ namespace PixelOverlay.Views
             try
             {
                 if (_widget.WindowState == XboxGameBarWidgetWindowState.Minimized)
+                {
                     await _widget.RestoreAsync();
+                    SettingsStore.Current.SetWindowHidden(_windowId, false);
+                }
                 else
+                {
                     await _widget.MinimizeAsync();
+                    SettingsStore.Current.SetWindowHidden(_windowId, true);
+                }
             }
             catch (Exception ex) { AppDiagnostics.Log("Toggle overlay visibility", ex); }
         }
