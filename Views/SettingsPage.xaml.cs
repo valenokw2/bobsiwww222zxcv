@@ -4,7 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Gaming.XboxGameBar;
-using Microsoft.UI.Xaml.Controls;
+using Muxc = Microsoft.UI.Xaml.Controls;
 using PixelOverlay.Models;
 using PixelOverlay.Services;
 using PixelOverlay.Services.Media;
@@ -353,7 +353,7 @@ namespace PixelOverlay.Views
         {
             try
             {
-                if (_restoringSelection || !(LibraryList.SelectedItem is ImageRecord item)) return;
+                if (_restoringSelection || _updatingLibraryView || _applyingStoreSnapshot || !(LibraryList.SelectedItem is ImageRecord item)) return;
                 _selected = item;
                 _state.SelectedImageId = item.Id;
                 // The selection handler synchronously updates the store; force the pending
@@ -532,9 +532,9 @@ namespace PixelOverlay.Views
             }
         }
 
-        private void NavigationView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+        private void NavigationView_SelectionChanged(Muxc.NavigationView sender, Muxc.NavigationViewSelectionChangedEventArgs args)
         {
-            var item = args.SelectedItem as NavigationViewItem;
+            var item = args.SelectedItem as Muxc.NavigationViewItem;
             var section = item?.Tag as string ?? "windows";
             WindowsSection.Visibility = section == "windows" ? Visibility.Visible : Visibility.Collapsed;
             LibrarySection.Visibility = section == "library" ? Visibility.Visible : Visibility.Collapsed;
@@ -680,7 +680,7 @@ namespace PixelOverlay.Views
             if (!(((FrameworkElement)sender).Tag is MediaSearchResult result) ||
                 !Uri.TryCreate(result.PageUrl, UriKind.Absolute, out var uri) ||
                 uri.Scheme != Uri.UriSchemeHttps ||
-                !uri.Host.EndsWith("giphy.com", StringComparison.OrdinalIgnoreCase))
+                !(string.Equals(uri.Host, "giphy.com", StringComparison.OrdinalIgnoreCase) || uri.Host.EndsWith(".giphy.com", StringComparison.OrdinalIgnoreCase)))
                 return;
 
             try { await Launcher.LaunchUriAsync(uri); }
