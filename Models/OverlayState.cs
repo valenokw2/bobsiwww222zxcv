@@ -429,6 +429,7 @@ namespace PixelOverlay.Models
         [DataMember] public DateTimeOffset AddedAt { get; set; }
         [DataMember] public bool IsFavorite { get; set; }
         public bool IsGif => string.Equals(Extension, ".gif", StringComparison.OrdinalIgnoreCase);
+        public string FavoriteGlyph => IsFavorite ? "★" : "☆";
 
         public ImageRecord Clone()
         {
