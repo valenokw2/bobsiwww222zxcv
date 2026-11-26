@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
   <Application>
-    <!-- PersistedSettings, OverlayState, ImageRecord and OverlayProfile are
-         serialized by DataContractJsonSerializer in SettingsStore. -->
+    <!-- PersistedSettings, OverlayState, WindowInstanceConfig, ImageRecord and OverlayProfile are
+         serialized by DataContractJsonSerializer in SettingsStore. The namespace rule preserves
+         dictionary and collection members used by the per-window settings map. -->
     <Namespace Name="PixelOverlay.Models" DataContractJsonSerializer="Required All" />
   </Application>
 </Directives>
