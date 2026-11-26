@@ -21,6 +21,7 @@ namespace PixelOverlay.Views
         private readonly ObservableCollection<ImageRecord> _library = new ObservableCollection<ImageRecord>();
         private readonly ObservableCollection<OverlayProfile> _profiles = new ObservableCollection<OverlayProfile>();
         private XboxGameBarWidget _widget;
+        private XboxGameBarWidgetControl _widgetControl;
         private OverlayState _state = new OverlayState();
         private ImageRecord _selected;
         private bool _dragging;
@@ -42,6 +43,7 @@ namespace PixelOverlay.Views
         protected override void OnNavigatedTo(Windows.UI.Xaml.Navigation.NavigationEventArgs e)
         {
             _widget = e.Parameter as XboxGameBarWidget;
+            _widgetControl = _widget == null ? null : new XboxGameBarWidgetControl(_widget);
             base.OnNavigatedTo(e);
         }
 
@@ -265,6 +267,8 @@ namespace PixelOverlay.Views
             if (GifControls == null || PlayPauseButton == null) return;
             GifControls.Visibility = _selected?.IsGif == true ? Visibility.Visible : Visibility.Collapsed;
             PlayPauseButton.Content = _state.GifPlaying ? "Pause GIF" : "Play GIF";
+            HideOverlayButton.IsEnabled = _widgetControl != null;
+            ShowOverlayButton.IsEnabled = _widgetControl != null;
         }
 
         private async void Import_Click(object sender, RoutedEventArgs e)
@@ -275,7 +279,7 @@ namespace PixelOverlay.Views
                 if (item == null || _cleanedUp) return;
                 var nextState = _state.Clone();
                 nextState.SelectedImageId = item.Id;
-                SettingsStore.Current.AddImageAndSelect(item, nextState);
+                await SettingsStore.Current.AddImageAndSelectAsync(item, nextState);
             }
             catch (Exception ex) { ShowError("Cannot import this image: " + ex.Message); }
         }
@@ -292,7 +296,7 @@ namespace PixelOverlay.Views
                 if (_cleanedUp) return;
                 var nextState = _state.Clone();
                 nextState.SelectedImageId = item.Id;
-                SettingsStore.Current.AddImageAndSelect(item, nextState);
+                await SettingsStore.Current.AddImageAndSelectAsync(item, nextState);
             }
             catch (Exception ex) { ShowError("Cannot import dropped file: " + ex.Message); }
             finally { deferral.Complete(); }
@@ -311,6 +315,9 @@ namespace PixelOverlay.Views
                 if (_restoringSelection || !(LibraryList.SelectedItem is ImageRecord item)) return;
                 _selected = item;
                 _state.SelectedImageId = item.Id;
+                // The selection handler synchronously updates the store; force the pending
+                // debounce to disk before returning to the game or closing Settings.
+                await SettingsStore.Current.FlushAsync();
                 await LoadPreviewAsync();
             }
             catch (Exception ex) { AppDiagnostics.Log("Library selection changed", ex); }
@@ -329,6 +336,28 @@ namespace PixelOverlay.Views
             {
                 AppDiagnostics.Log("Remove library image", ex);
                 ShowError("Cannot remove this image: " + ex.Message);
+            }
+        }
+
+        private async void HideOverlay_Click(object sender, RoutedEventArgs e)
+        {
+            if (_widgetControl == null) return;
+            try { await _widgetControl.MinimizeAsync("PixelOverlay"); }
+            catch (Exception ex)
+            {
+                AppDiagnostics.Log("Minimize overlay from settings", ex);
+                ShowError("The overlay could not be hidden: " + ex.Message);
+            }
+        }
+
+        private async void ShowOverlay_Click(object sender, RoutedEventArgs e)
+        {
+            if (_widgetControl == null) return;
+            try { await _widgetControl.RestoreAsync("PixelOverlay"); }
+            catch (Exception ex)
+            {
+                AppDiagnostics.Log("Restore overlay from settings", ex);
+                ShowError("The overlay could not be restored: " + ex.Message);
             }
         }
 
