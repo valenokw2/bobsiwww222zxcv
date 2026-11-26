@@ -44,7 +44,7 @@ namespace PixelOverlay.Services
             if (source == null) throw new InvalidOperationException("No file was provided.");
             var extension = Path.GetExtension(source.Name).ToLowerInvariant();
             if (extension != ".png" && extension != ".jpg" && extension != ".jpeg" && extension != ".gif" && extension != ".webp")
-                throw new InvalidOperationException("Only PNG, JPG, JPEG, and GIF files are supported.");
+                throw new InvalidOperationException("Only PNG, JPG, JPEG, WEBP and GIF files are supported.");
 
             if (extension == ".gif")
             {
