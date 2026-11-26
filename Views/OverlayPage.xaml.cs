@@ -121,7 +121,11 @@ namespace PixelOverlay.Views
                 {
                     _gif?.SetVisible(visible);
                     if (sender != null)
+                    {
                         SettingsStore.Current.SetWindowClickThrough(_windowId, sender.ClickThroughEnabled);
+                        SettingsStore.Current.SetWindowHidden(_windowId,
+                            sender.WindowState == XboxGameBarWidgetWindowState.Minimized);
+                    }
                     _ = RefreshSafelyAsync();
                 });
             }
