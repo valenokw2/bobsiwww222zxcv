@@ -305,8 +305,15 @@ namespace PixelOverlay.Views
                 };
                 player.PlaybackFailed += (s, e) =>
                 {
-                    if (!_cleanedUp && IsCurrentLayer(layerId, imageId))
-                        AppDiagnostics.Log("GIF layer playback", new InvalidOperationException("GIF layer playback stopped."));
+                    if (_cleanedUp || !IsCurrentLayer(layerId, imageId)) return;
+                    AppDiagnostics.Log("GIF layer playback", new InvalidOperationException("GIF layer playback stopped."));
+                    if (_gifPlayers.TryGetValue(layerId, out var failed) && ReferenceEquals(failed, player))
+                    {
+                        failed.Dispose();
+                        _gifPlayers.Remove(layerId);
+                        if (_staticImageCache.TryGetValue(imageId, out var fallback))
+                            layer.ImageSource = fallback;
+                    }
                 };
 
                 // Reserve the slot before awaiting decoder initialization so no other
