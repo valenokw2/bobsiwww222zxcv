@@ -380,11 +380,31 @@ namespace PixelOverlay.Views
             try
             {
                 var item = await _images.PickAndImportAsync();
-                if (item == null || _cleanedUp) return;
-                bool added = await SettingsStore.Current.AddImageAndSelectAsync(item, _state);
-                if (!added) ShowError("The image was imported into the library, but the scene already has 30 layers.");
+                await AddImportedImageToSceneAsync(item, "The image");
             }
             catch (Exception ex) { ShowError("Cannot import this image: " + ex.Message); }
+        }
+
+        private async void ImportUrl_Click(object sender, RoutedEventArgs e)
+        {
+            var url = ImageUrlBox.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(url)) return;
+            try
+            {
+                var item = await _images.ImportFromUrlAsync(url);
+                if (_cleanedUp) return;
+                ImageUrlBox.Text = string.Empty;
+                await AddImportedImageToSceneAsync(item, "The downloaded image");
+            }
+            catch (Exception ex) { ShowError("Cannot download this image: " + ex.Message); }
+        }
+
+        private async Task AddImportedImageToSceneAsync(ImageRecord item, string sourceLabel)
+        {
+            if (item == null || _cleanedUp) return;
+            bool added = await SettingsStore.Current.AddImageAndSelectAsync(item, _state);
+            if (!added)
+                ShowError(sourceLabel + " was imported into the library, but the scene already has 30 layers.");
         }
 
         private async void Page_Drop(object sender, DragEventArgs e)
@@ -392,22 +412,47 @@ namespace PixelOverlay.Views
             var deferral = e.GetDeferral();
             try
             {
-                var items = await e.DataView.GetStorageItemsAsync();
-                var file = items.OfType<StorageFile>().FirstOrDefault();
-                if (file == null || _cleanedUp) return;
-                var item = await _images.ImportAsync(file);
-                if (_cleanedUp) return;
-                bool added = await SettingsStore.Current.AddImageAndSelectAsync(item, _state);
-                if (!added) ShowError("The file was imported into the library, but the scene already has 30 layers.");
+                var data = e.DataView;
+                ImageRecord item = null;
+
+                if (data.Contains(StandardDataFormats.StorageItems))
+                {
+                    var items = await data.GetStorageItemsAsync();
+                    var file = items.OfType<StorageFile>().FirstOrDefault();
+                    if (file != null)
+                        item = await _images.ImportAsync(file);
+                }
+
+                // Browsers often expose a copied image URL as Uri rather than a local file.
+                if (item == null && data.Contains(StandardDataFormats.Uri))
+                {
+                    var uri = await data.GetUriAsync();
+                    if (uri != null)
+                        item = await _images.ImportFromUrlAsync(uri.AbsoluteUri);
+                }
+
+                // Some browser/address-bar drags and clipboard sources expose plain text.
+                if (item == null && data.Contains(StandardDataFormats.Text))
+                {
+                    var text = (await data.GetTextAsync())?.Trim();
+                    if (Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
+                        (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
+                        item = await _images.ImportFromUrlAsync(uri.AbsoluteUri);
+                }
+
+                if (item != null)
+                    await AddImportedImageToSceneAsync(item, "The dropped image");
             }
-            catch (Exception ex) { ShowError("Cannot import dropped file: " + ex.Message); }
+            catch (Exception ex) { ShowError("Cannot import dropped image or URL: " + ex.Message); }
             finally { deferral.Complete(); }
         }
 
         private void Page_DragOver(object sender, DragEventArgs e)
         {
-            e.AcceptedOperation = e.DataView.Contains(StandardDataFormats.StorageItems)
-                ? DataPackageOperation.Copy : DataPackageOperation.None;
+            bool canImport = e.DataView.Contains(StandardDataFormats.StorageItems) ||
+                e.DataView.Contains(StandardDataFormats.Uri) ||
+                e.DataView.Contains(StandardDataFormats.Text);
+            e.AcceptedOperation = canImport ? DataPackageOperation.Copy : DataPackageOperation.None;
         }
 
         private void Library_SelectionChanged(object sender, SelectionChangedEventArgs e)
