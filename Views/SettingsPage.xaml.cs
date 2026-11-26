@@ -263,12 +263,18 @@ namespace PixelOverlay.Views
         {
             var generation = _previewLoadGeneration;
             var referencedImages = new HashSet<string>(_layers
-                .Where(x => !string.IsNullOrWhiteSpace(x.ImageId))
+                .Where(x => x.IsVisible && !string.IsNullOrWhiteSpace(x.ImageId))
                 .Select(x => x.ImageId), StringComparer.Ordinal);
             foreach (var cachedId in _previewImageCache.Keys.Where(x => !referencedImages.Contains(x)).ToList())
                 _previewImageCache.Remove(cachedId);
 
             foreach (var layer in _layers.ToList())
+            {
+                if (!layer.IsVisible)
+                {
+                    layer.ImageSource = null;
+                    continue;
+                }
             {
                 if (_cleanedUp || generation != _previewLoadGeneration) return;
                 var item = _library.FirstOrDefault(x => string.Equals(x.Id, layer.ImageId, StringComparison.Ordinal));
@@ -312,6 +318,8 @@ namespace PixelOverlay.Views
                     AppDiagnostics.Log("Settings layer preview", ex);
                     if (generation == _previewLoadGeneration) layer.ImageSource = null;
                 }
+            }
+
             }
 
             EmptyPreview.Visibility = _layers.Any(x => x.IsVisible && x.ImageSource != null)
