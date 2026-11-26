@@ -80,7 +80,7 @@
                                                    TextTrimming="CharacterEllipsis"/>
                                         <Button Grid.Column="1" Tag="{Binding}" Content="↑" Click="MoveLayerUp_Click" Padding="6,2"/>
                                         <Button Grid.Column="2" Tag="{Binding}" Content="↓" Click="MoveLayerDown_Click" Padding="6,2"/>
-                                        <Button Grid.Column="3" Tag="{Binding}" Content="◉" Click="ToggleLayerVisibility_Click" Padding="6,2"/>
+                                        <Button Grid.Column="3" Tag="{Binding}" Content="{Binding VisibilityGlyph}" Click="ToggleLayerVisibility_Click" Padding="6,2"/>
                                         <Button Grid.Column="4" Tag="{Binding}" Content="×" Click="RemoveLayer_Click" Padding="6,2"/>
                                     </Grid>
                                 </DataTemplate>
