@@ -279,6 +279,14 @@ namespace PixelOverlay.Views
                     if (_cleanedUp || generation != _previewLoadGeneration ||
                         !_layers.Contains(layer) || !string.Equals(layer.ImageId, item.Id, StringComparison.Ordinal))
                         return;
+                    if (layer.Width <= 0 || layer.Height <= 0)
+                    {
+                        double sourceWidth = Math.Max(1, bitmap.PixelWidth);
+                        double sourceHeight = Math.Max(1, bitmap.PixelHeight);
+                        double fit = Math.Min(1d, Math.Min(240d / sourceWidth, 140d / sourceHeight));
+                        layer.Width = Math.Max(1, sourceWidth * fit);
+                        layer.Height = Math.Max(1, sourceHeight * fit);
+                    }
                     layer.ImageSource = bitmap;
                 }
                 catch (Exception ex)
