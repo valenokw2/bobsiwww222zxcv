@@ -22,6 +22,7 @@ namespace PixelOverlay.Views
         private readonly ObservableCollection<ImageRecord> _libraryView = new ObservableCollection<ImageRecord>();
         private readonly ObservableCollection<OverlayLayer> _layers = new ObservableCollection<OverlayLayer>();
         private readonly ObservableCollection<OverlayProfile> _profiles = new ObservableCollection<OverlayProfile>();
+        private readonly Dictionary<string, ImageSource> _previewImageCache = new Dictionary<string, ImageSource>(StringComparer.Ordinal);
         private XboxGameBarWidget _widget;
         private XboxGameBarWidgetControl _widgetControl;
         private OverlayState _state = new OverlayState();
@@ -86,6 +87,7 @@ namespace PixelOverlay.Views
             _dragging = false;
             _layers.Clear();
             _libraryView.Clear();
+            _previewImageCache.Clear();
         }
 
         private void LocalState_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -260,6 +262,12 @@ namespace PixelOverlay.Views
         private async Task LoadPreviewLayersAsync()
         {
             var generation = _previewLoadGeneration;
+            var referencedImages = new HashSet<string>(_layers
+                .Where(x => !string.IsNullOrWhiteSpace(x.ImageId))
+                .Select(x => x.ImageId), StringComparer.Ordinal);
+            foreach (var cachedId in _previewImageCache.Keys.Where(x => !referencedImages.Contains(x)).ToList())
+                _previewImageCache.Remove(cachedId);
+
             foreach (var layer in _layers.ToList())
             {
                 if (_cleanedUp || generation != _previewLoadGeneration) return;
@@ -275,19 +283,29 @@ namespace PixelOverlay.Views
                 if (layer.ImageSource != null) continue;
                 try
                 {
-                    var bitmap = await _images.LoadBitmapAsync(item, 768);
+                    if (!_previewImageCache.TryGetValue(item.Id, out var bitmapSource))
+                    {
+                        var bitmap = await _images.LoadBitmapAsync(item, 768);
+                        if (_cleanedUp || generation != _previewLoadGeneration ||
+                            !_layers.Contains(layer) || !string.Equals(layer.ImageId, item.Id, StringComparison.Ordinal))
+                            return;
+                        bitmapSource = bitmap;
+                        _previewImageCache[item.Id] = bitmapSource;
+                    }
+
                     if (_cleanedUp || generation != _previewLoadGeneration ||
                         !_layers.Contains(layer) || !string.Equals(layer.ImageId, item.Id, StringComparison.Ordinal))
                         return;
                     if (layer.Width <= 0 || layer.Height <= 0)
                     {
-                        double sourceWidth = Math.Max(1, bitmap.PixelWidth);
-                        double sourceHeight = Math.Max(1, bitmap.PixelHeight);
+                        var dimensions = bitmapSource as Windows.UI.Xaml.Media.Imaging.BitmapImage;
+                        double sourceWidth = Math.Max(1, dimensions?.PixelWidth ?? 768);
+                        double sourceHeight = Math.Max(1, dimensions?.PixelHeight ?? 768);
                         double fit = Math.Min(1d, Math.Min(240d / sourceWidth, 140d / sourceHeight));
                         layer.Width = Math.Max(1, sourceWidth * fit);
                         layer.Height = Math.Max(1, sourceHeight * fit);
                     }
-                    layer.ImageSource = bitmap;
+                    layer.ImageSource = bitmapSource;
                 }
                 catch (Exception ex)
                 {
