@@ -4,53 +4,178 @@
       Background="Transparent"
       AllowDrop="True" DragOver="Page_DragOver" Drop="Page_Drop">
     <Grid Background="{StaticResource PanelBrush}" Padding="16" RowSpacing="12">
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="190"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="190"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
         <Grid Grid.Row="0" ColumnSpacing="8">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <StackPanel><TextBlock Text="PIXEL OVERLAY" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="Image-only Game Bar overlay" Opacity=".7" FontSize="12"/></StackPanel>
+            <StackPanel>
+                <TextBlock Text="PIXEL OVERLAY" FontSize="20" FontWeight="SemiBold"/>
+                <TextBlock Text="One Game Bar widget · up to 30 image layers" Opacity=".7" FontSize="12"/>
+            </StackPanel>
             <Button Grid.Column="1" Content="Import image" Click="Import_Click" HorizontalAlignment="Right"/>
         </Grid>
+
         <Border Grid.Row="1" x:Name="PreviewSurface" Background="#12151C" CornerRadius="6"
                 SizeChanged="PreviewSurface_SizeChanged"
                 PointerPressed="Preview_PointerPressed" PointerMoved="Preview_PointerMoved"
                 PointerReleased="Preview_PointerReleased"
                 PointerCaptureLost="Preview_PointerCaptureLost" PointerCanceled="Preview_PointerCanceled">
             <Grid>
+                <ItemsControl x:Name="PreviewLayers" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                              IsHitTestVisible="False">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><Canvas HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="Canvas.Left" Value="{Binding CanvasLeft}"/>
+                            <Setter Property="Canvas.Top" Value="{Binding CanvasTop}"/>
+                            <Setter Property="Canvas.ZIndex" Value="{Binding ZIndex}"/>
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Width="{Binding Width}" Height="{Binding Height}" Opacity="{Binding OpacityFactor}"
+                                  Visibility="{Binding LayerVisibility}">
+                                <Image Source="{Binding ImageSource}" Stretch="Uniform">
+                                    <Image.RenderTransform>
+                                        <CompositeTransform CenterX="{Binding TransformCenterX}"
+                                                             CenterY="{Binding TransformCenterY}"
+                                                             ScaleX="{Binding ScaleFactor}"
+                                                             ScaleY="{Binding ScaleFactor}"
+                                                             Rotation="{Binding Rotation}"/>
+                                    </Image.RenderTransform>
+                                </Image>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <TextBlock x:Name="EmptyPreview" Text="PNG, JPG, JPEG or GIF&#10;Drop here or import an image"
-                           TextAlignment="Center" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity=".55"/>
-                <Image x:Name="PreviewImage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                       Stretch="Uniform" IsHitTestVisible="False">
-                    <Image.RenderTransform><CompositeTransform x:Name="PreviewTransform" /></Image.RenderTransform>
-                </Image>
+                           TextAlignment="Center" VerticalAlignment="Center" HorizontalAlignment="Center"
+                           Opacity=".55" IsHitTestVisible="False"/>
             </Grid>
         </Border>
+
         <Pivot Grid.Row="2" x:Name="Tabs">
             <PivotItem Header="Adjust">
-                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Spacing="10">
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions><TextBlock Text="Opacity"/><TextBlock Grid.Column="1" Text="{Binding OpacityText}" HorizontalAlignment="Right" Opacity=".7"/></Grid>
-                    <Slider Minimum="0" Maximum="100" Value="{Binding Opacity, Mode=TwoWay}" />
-                    <CheckBox Content="Ignore Game Bar opacity" IsChecked="{Binding IgnoreGameBarOpacity, Mode=TwoWay}" />
-                    <TextBlock Text="When enabled, only the Pixel Overlay opacity slider affects the image." FontSize="11" Opacity=".65" TextWrapping="Wrap" />
-                    <CheckBox Content="Enable Ctrl+Alt+O to hide or show the overlay" IsChecked="{Binding VisibilityHotkeyEnabled, Mode=TwoWay}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button x:Name="HideOverlayButton" Content="Hide overlay" Click="HideOverlay_Click" />
-                        <Button x:Name="ShowOverlayButton" Content="Show overlay" Click="ShowOverlay_Click" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="LAYERS" FontWeight="SemiBold"/>
+                        <ListView x:Name="LayerList" Height="128" SelectionChanged="LayerList_SelectionChanged">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="3" ColumnSpacing="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <Button Grid.Column="1" Tag="{Binding}" Content="↑" Click="MoveLayerUp_Click" Padding="6,2"/>
+                                        <Button Grid.Column="2" Tag="{Binding}" Content="↓" Click="MoveLayerDown_Click" Padding="6,2"/>
+                                        <Button Grid.Column="3" Tag="{Binding}" Content="◉" Click="ToggleLayerVisibility_Click" Padding="6,2"/>
+                                        <Button Grid.Column="4" Tag="{Binding}" Content="×" Click="RemoveLayer_Click" Padding="6,2"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Text="SELECTED LAYER" FontWeight="SemiBold"/>
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions><TextBlock Text="Opacity"/><TextBlock Grid.Column="1" Text="{Binding OpacityText}" HorizontalAlignment="Right" Opacity=".7"/></Grid>
+                        <Slider x:Name="OpacitySlider" Minimum="0" Maximum="100" Value="{Binding Opacity, Mode=TwoWay}"/>
+                        <CheckBox Content="Ignore Game Bar opacity" IsChecked="{Binding IgnoreGameBarOpacity, Mode=TwoWay}"/>
+                        <TextBlock Text="When enabled, only the Pixel Overlay opacity slider affects the image." FontSize="11" Opacity=".65" TextWrapping="Wrap"/>
+                        <CheckBox Content="Enable Ctrl+Alt+O to hide or show the overlay" IsChecked="{Binding VisibilityHotkeyEnabled, Mode=TwoWay}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="HideOverlayButton" Content="Hide overlay" Click="HideOverlay_Click"/>
+                            <Button x:Name="ShowOverlayButton" Content="Show overlay" Click="ShowOverlay_Click"/>
+                        </StackPanel>
+
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions><TextBlock Text="Scale"/><TextBlock Grid.Column="1" Text="{Binding ScaleText}" HorizontalAlignment="Right" Opacity=".7"/></Grid>
+                        <Slider x:Name="ScaleSlider" Minimum="10" Maximum="500" Value="{Binding Scale, Mode=TwoWay}"/>
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions><TextBlock Text="Rotation"/><TextBlock Grid.Column="1" Text="{Binding RotationText}" HorizontalAlignment="Right" Opacity=".7"/></Grid>
+                        <Slider x:Name="RotationSlider" Minimum="0" Maximum="360" Value="{Binding Rotation, Mode=TwoWay}"/>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                            <Button Content="Center" Click="Center_Click"/>
+                            <Button Grid.Column="1" Content="Reset transform" Click="Reset_Click"/>
+                            <Button Grid.Column="2" Content="Reset rotation" Click="ResetRotation_Click"/>
+                        </Grid>
+                        <TextBlock Text="Position (drag the selected layer in the preview)"/>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                            <TextBox x:Name="PositionXBox" Header="X" Text="{Binding PositionX, Mode=TwoWay}"/>
+                            <TextBox Grid.Column="1" x:Name="PositionYBox" Header="Y" Text="{Binding PositionY, Mode=TwoWay}"/>
+                        </Grid>
+                        <StackPanel x:Name="GifControls" Spacing="6">
+                            <TextBlock Text="GIF playback"/>
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions>
+                                <Slider x:Name="GifSpeedSlider" Minimum=".25" Maximum="4" StepFrequency=".25" Value="{Binding GifSpeed, Mode=TwoWay}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding GifSpeedText}" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <CheckBox Content="Play GIF" IsChecked="{Binding GifPlaying, Mode=TwoWay}"/>
+                        </StackPanel>
                     </StackPanel>
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions><TextBlock Text="Scale"/><TextBlock Grid.Column="1" Text="{Binding ScaleText}" HorizontalAlignment="Right" Opacity=".7"/></Grid>
-                    <Slider Minimum="10" Maximum="500" Value="{Binding Scale, Mode=TwoWay}" />
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions><TextBlock Text="Rotation"/><TextBlock Grid.Column="1" Text="{Binding RotationText}" HorizontalAlignment="Right" Opacity=".7"/></Grid>
-                    <Slider Minimum="0" Maximum="360" Value="{Binding Rotation, Mode=TwoWay}" />
-                    <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><Button Content="Center" Click="Center_Click"/><Button Grid.Column="1" Content="Reset transform" Click="Reset_Click"/><Button Grid.Column="2" Content="Reset rotation" Click="ResetRotation_Click"/></Grid>
-                    <TextBlock Text="Position (drag the preview for fine placement)" Margin="0,4,0,0"/><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><TextBox x:Name="PositionXBox" Header="X" Text="{Binding PositionX, Mode=TwoWay}"/><TextBox Grid.Column="1" x:Name="PositionYBox" Header="Y" Text="{Binding PositionY, Mode=TwoWay}"/></Grid>
-                    <StackPanel x:Name="GifControls" Spacing="6"><TextBlock Text="GIF playback" Margin="0,8,0,0"/><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions><Slider Minimum=".25" Maximum="4" StepFrequency=".25" Value="{Binding GifSpeed, Mode=TwoWay}"/><TextBlock Grid.Column="1" Text="{Binding GifSpeedText}" VerticalAlignment="Center" HorizontalAlignment="Right"/></Grid><Button x:Name="PlayPauseButton" Content="Pause GIF" Click="PlayPause_Click"/></StackPanel>
-                </StackPanel></ScrollViewer>
+                </ScrollViewer>
             </PivotItem>
+
             <PivotItem Header="Library &amp; presets">
-                <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="170"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <TextBlock Text="Recent images" FontWeight="SemiBold"/>
-                    <ListView x:Name="LibraryList" Grid.Row="1" SelectionChanged="Library_SelectionChanged"><ListView.ItemTemplate><DataTemplate><Grid Padding="4"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/><Button Grid.Column="1" Tag="{Binding}" Content="Remove" Click="RemoveImage_Click"/></Grid></DataTemplate></ListView.ItemTemplate></ListView>
-                    <Grid Grid.Row="2" Margin="0,8,0,0" ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="ProfileNameBox" Header="Preset name" PlaceholderText="e.g. Center dot"/><Button Grid.Column="1" Content="Save preset" Click="SavePreset_Click" VerticalAlignment="Bottom"/></Grid>
-                    <ListView x:Name="ProfileList" Grid.Row="3" SelectionChanged="Profile_SelectionChanged"><ListView.ItemTemplate><DataTemplate><Grid Padding="4"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Name}"/><Button Grid.Column="1" Tag="{Binding}" Content="Apply" Click="ApplyPreset_Click"/><Button Grid.Column="2" Tag="{Binding}" Content="Delete" Click="RemovePreset_Click"/></Grid></DataTemplate></ListView.ItemTemplate></ListView>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="120"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="IMAGE LIBRARY" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="LibraryFilterSelector" Grid.Column="1" SelectedIndex="0"
+                                  SelectionChanged="LibraryFilter_SelectionChanged">
+                            <ComboBoxItem Content="All images" Tag="all"/>
+                            <ComboBoxItem Content="Favorites" Tag="favorites"/>
+                            <ComboBoxItem Content="GIF only" Tag="gif"/>
+                        </ComboBox>
+                    </Grid>
+                    <ListView x:Name="LibraryList" Grid.Row="1" SelectionChanged="Library_SelectionChanged">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="4" ColumnSpacing="5">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Tag="{Binding}" Content="☆" Click="ToggleFavorite_Click" Padding="6,2"/>
+                                    <Button Grid.Column="2" Tag="{Binding}" Content="Remove" Click="RemoveImage_Click" Padding="6,2"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <Button Grid.Row="2" Content="＋ Add selected image as layer" Click="AddLayer_Click" Margin="0,6,0,6"/>
+                    <Grid Grid.Row="3" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBox x:Name="ProfileNameBox" Header="Composition preset name" PlaceholderText="e.g. Desktop setup"/>
+                        <Button Grid.Column="1" Content="Save composition" Click="SavePreset_Click" VerticalAlignment="Bottom"/>
+                    </Grid>
+                    <ListView x:Name="ProfileList" Grid.Row="4" SelectionChanged="Profile_SelectionChanged">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="3">
+                                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Tag="{Binding}" Content="Apply" Click="ApplyPreset_Click" Padding="6,2"/>
+                                    <Button Grid.Column="2" Tag="{Binding}" Content="Delete" Click="RemovePreset_Click" Padding="6,2"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
                 </Grid>
             </PivotItem>
         </Pivot>
