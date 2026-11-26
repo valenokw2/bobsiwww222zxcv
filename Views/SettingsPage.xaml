@@ -29,6 +29,13 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Spacing="10">
                     <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions><TextBlock Text="Opacity"/><TextBlock Grid.Column="1" Text="{Binding OpacityText}" HorizontalAlignment="Right" Opacity=".7"/></Grid>
                     <Slider Minimum="0" Maximum="100" Value="{Binding Opacity, Mode=TwoWay}" />
+                    <CheckBox Content="Ignore Game Bar opacity" IsChecked="{Binding IgnoreGameBarOpacity, Mode=TwoWay}" />
+                    <TextBlock Text="When enabled, only the Pixel Overlay opacity slider affects the image." FontSize="11" Opacity=".65" TextWrapping="Wrap" />
+                    <CheckBox Content="Enable Ctrl+Alt+O to hide or show the overlay" IsChecked="{Binding VisibilityHotkeyEnabled, Mode=TwoWay}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="HideOverlayButton" Content="Hide overlay" Click="HideOverlay_Click" />
+                        <Button x:Name="ShowOverlayButton" Content="Show overlay" Click="ShowOverlay_Click" />
+                    </StackPanel>
                     <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions><TextBlock Text="Scale"/><TextBlock Grid.Column="1" Text="{Binding ScaleText}" HorizontalAlignment="Right" Opacity=".7"/></Grid>
                     <Slider Minimum="10" Maximum="500" Value="{Binding Scale, Mode=TwoWay}" />
                     <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions><TextBlock Text="Rotation"/><TextBlock Grid.Column="1" Text="{Binding RotationText}" HorizontalAlignment="Right" Opacity=".7"/></Grid>
