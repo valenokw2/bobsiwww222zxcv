@@ -330,6 +330,14 @@ namespace PixelOverlay.Views
                         uri = await e.DataView.GetWebLinkAsync();
                     else if (e.DataView.Contains(StandardDataFormats.Uri))
                         uri = await e.DataView.GetUriAsync();
+                    else if (e.DataView.Contains(StandardDataFormats.Text))
+                    {
+                        var text = (await e.DataView.GetTextAsync())?.Trim();
+                        Uri parsed;
+                        if (Uri.TryCreate(text, UriKind.Absolute, out parsed) &&
+                            parsed.Scheme == Uri.UriSchemeHttps)
+                            uri = parsed;
+                    }
                     if (uri != null) item = await _images.ImportFromUriAsync(uri);
                 }
 
@@ -346,7 +354,8 @@ namespace PixelOverlay.Views
         {
             bool supported = e.DataView.Contains(StandardDataFormats.StorageItems) ||
                 e.DataView.Contains(StandardDataFormats.WebLink) ||
-                e.DataView.Contains(StandardDataFormats.Uri);
+                e.DataView.Contains(StandardDataFormats.Uri) ||
+                e.DataView.Contains(StandardDataFormats.Text);
             e.AcceptedOperation = supported ? DataPackageOperation.Copy : DataPackageOperation.None;
         }
 
