@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Gaming.XboxGameBar;
 using Microsoft.Gaming.XboxGameBar.Input;
 using PixelOverlay.Models;
 using PixelOverlay.Services;
+using Windows.Storage;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.System;
@@ -14,18 +17,22 @@ namespace PixelOverlay.Views
 {
     public sealed partial class OverlayPage : Page
     {
+        private const int MaxAnimatedGifPlayers = 4;
+
         private XboxGameBarWidget _widget;
         private readonly ImageLibraryService _images = new ImageLibraryService();
-        private GifPlayer _gif;
-        private string _loadedId;
-        private string _loadingId;
-        private int _imageLoadGeneration;
+        private readonly ObservableCollection<OverlayLayer> _layers = new ObservableCollection<OverlayLayer>();
+        private readonly Dictionary<string, GifPlayer> _gifPlayers = new Dictionary<string, GifPlayer>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _loadedImageIds = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _loadingLayers = new HashSet<string>(StringComparer.Ordinal);
+        private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
         private bool _cleanedUp;
         private XboxGameBarHotkeyWatcher _visibilityHotkeyWatcher;
 
         public OverlayPage()
         {
             InitializeComponent();
+            LayerItems.ItemsSource = _layers;
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
         }
@@ -54,6 +61,7 @@ namespace PixelOverlay.Views
                     _widget.RequestedOpacityChanged += OnWidgetStateChanged;
                     _widget.GameBarDisplayModeChanged += OnWidgetStateChanged;
                     _widget.ClickThroughEnabledChanged += OnWidgetStateChanged;
+                    _widget.VisibleChanged += OnWidgetStateChanged;
                 }
                 await RefreshAsync();
             }
@@ -75,14 +83,14 @@ namespace PixelOverlay.Views
                 _widget.RequestedOpacityChanged -= OnWidgetStateChanged;
                 _widget.GameBarDisplayModeChanged -= OnWidgetStateChanged;
                 _widget.ClickThroughEnabledChanged -= OnWidgetStateChanged;
+                _widget.VisibleChanged -= OnWidgetStateChanged;
             }
 
-            _imageLoadGeneration++;
-            _loadingId = null;
-            _loadedId = null;
-            _gif?.Dispose();
-            _gif = null;
-            OverlayImage.Source = null;
+            foreach (var player in _gifPlayers.Values) player.Dispose();
+            _gifPlayers.Clear();
+            _loadedImageIds.Clear();
+            _loadingLayers.Clear();
+            _layers.Clear();
         }
 
         private async void OnStateChanged(object sender, EventArgs e)
@@ -113,147 +121,205 @@ namespace PixelOverlay.Views
 
         private async Task RefreshAsync()
         {
-            if (_cleanedUp) return;
-
-            UpdateTransformCenter();
-            var snapshot = SettingsStore.Current.GetSnapshot();
-            var state = snapshot.State ?? new OverlayState();
-
-            OverlayImage.Opacity = state.Opacity / 100d;
-            UpdateVisibilityHotkey(state.VisibilityHotkeyEnabled);
-            OverlayTransform.ScaleX = OverlayTransform.ScaleY = state.Scale / 100d;
-            OverlayTransform.TranslateX = state.PositionX;
-            OverlayTransform.TranslateY = state.PositionY;
-            OverlayTransform.Rotation = state.Rotation;
-
-            // The Xbox Game Bar sample applies RequestedOpacity directly to a XAML Opacity
-            // property. Do not divide the SDK value by 100 here.
-            OverlaySurface.Opacity = _widget == null || state.IgnoreGameBarOpacity
-                ? 1d
-                : _widget.RequestedOpacity;
-
-            var item = snapshot.Library?.FirstOrDefault(x =>
-                string.Equals(x.Id, state.SelectedImageId, StringComparison.Ordinal));
-
-            if (item == null)
-            {
-                _imageLoadGeneration++;
-                _loadingId = null;
-                _loadedId = null;
-                _gif?.Dispose();
-                _gif = null;
-                OverlayImage.Source = null;
-                Hint.Text = "Open this widget's settings to import an image";
-                Hint.Visibility = Visibility.Visible;
-                return;
-            }
-
-            Hint.Visibility = Visibility.Collapsed;
-            if (string.Equals(_loadedId, item.Id, StringComparison.Ordinal))
-            {
-                if (item.IsGif) _gif?.UpdateSchedule(state);
-                return;
-            }
-
-            // A transform update during decode must not start a duplicate load. A new image
-            // selection increments the generation and invalidates the previous asynchronous load.
-            if (string.Equals(_loadingId, item.Id, StringComparison.Ordinal)) return;
-
-            var generation = ++_imageLoadGeneration;
-            _loadingId = item.Id;
-            _loadedId = null;
-            _gif?.Dispose();
-            _gif = null;
-            OverlayImage.Source = null;
-            Hint.Text = "Loading image...";
-            Hint.Visibility = Visibility.Visible;
-
+            await _refreshGate.WaitAsync();
             try
             {
-                if (item.IsGif)
+                if (_cleanedUp) return;
+                var snapshot = SettingsStore.Current.GetSnapshot();
+                var state = snapshot.State ?? new OverlayState();
+
+                OverlaySurface.Opacity = _widget == null || state.IgnoreGameBarOpacity
+                    ? 1d
+                    : _widget.RequestedOpacity;
+                UpdateVisibilityHotkey(state.VisibilityHotkeyEnabled);
+
+                SyncLayerCollection(state.Layers);
+                UpdateLayerPositions();
+
+                var visibleLayers = _layers.Where(x => x.IsVisible && !string.IsNullOrWhiteSpace(x.ImageId)).ToList();
+                Hint.Visibility = visibleLayers.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                Hint.Text = _layers.Count == 0
+                    ? "Open this widget's settings to add images"
+                    : "No visible layers. Show a layer in Pixel Overlay Settings.";
+
+                foreach (var layer in _layers.OrderBy(x => x.ZIndex).ToList())
                 {
-                    var file = await _images.GetFileAsync(item);
-                    if (!IsCurrentLoad(generation, item.Id)) return;
-
-                    var player = new GifPlayer();
-                    _gif = player;
-                    player.FrameChanged += (s, e) =>
+                    if (_cleanedUp) return;
+                    var item = snapshot.Library?.FirstOrDefault(x =>
+                        string.Equals(x.Id, layer.ImageId, StringComparison.Ordinal));
+                    if (item == null)
                     {
-                        if (!_cleanedUp && generation == _imageLoadGeneration &&
-                            ReferenceEquals(_gif, player))
-                            OverlayImage.Source = player.CurrentFrame;
-                    };
-                    player.PlaybackFailed += (s, e) =>
-                    {
-                        if (!_cleanedUp && generation == _imageLoadGeneration &&
-                            ReferenceEquals(_gif, player))
-                        {
-                            Hint.Text = "GIF playback stopped because a frame could not be decoded";
-                            Hint.Visibility = Visibility.Visible;
-                        }
-                    };
-
-                    await player.OpenAsync(file, state);
-                    if (!IsCurrentLoad(generation, item.Id))
-                    {
-                        player.Dispose();
-                        return;
+                        RemoveLayerResources(layer.LayerId);
+                        layer.ImageSource = null;
+                        continue;
                     }
-                    // The selected GIF may have finished decoding after the user changed
-                    // playback speed or pressed Pause. Apply the latest shared snapshot.
-                    player.UpdateSchedule(SettingsStore.Current.GetSnapshot().State);
-                    OverlayImage.Source = player.CurrentFrame;
+
+                    bool visible = layer.IsVisible && (_widget == null || _widget.Visible);
+                    if (_gifPlayers.TryGetValue(layer.LayerId, out var existingPlayer))
+                    {
+                        existingPlayer.UpdateSchedule(CreatePlaybackState(layer));
+                        existingPlayer.SetVisible(visible);
+                    }
+
+                    if (_loadedImageIds.TryGetValue(layer.LayerId, out var loadedId) &&
+                        string.Equals(loadedId, item.Id, StringComparison.Ordinal))
+                        continue;
+                    if (_loadingLayers.Contains(layer.LayerId)) continue;
+
+                    await LoadLayerAsync(layer, item, visible);
+                }
+            }
+            finally { _refreshGate.Release(); }
+        }
+
+        private void SyncLayerCollection(IList<OverlayLayer> source)
+        {
+            var incoming = source ?? new List<OverlayLayer>();
+            var incomingIds = new HashSet<string>(incoming.Where(x => x != null).Select(x => x.LayerId), StringComparer.Ordinal);
+
+            foreach (var current in _layers.ToList())
+            {
+                if (incomingIds.Contains(current.LayerId)) continue;
+                RemoveLayerResources(current.LayerId);
+                _layers.Remove(current);
+            }
+
+            var ordered = incoming.Where(x => x != null).OrderBy(x => x.ZIndex).ToList();
+            for (int index = 0; index < ordered.Count; index++)
+            {
+                var sourceLayer = ordered[index];
+                var target = _layers.FirstOrDefault(x => string.Equals(x.LayerId, sourceLayer.LayerId, StringComparison.Ordinal));
+                if (target == null)
+                {
+                    target = sourceLayer.Clone();
+                    _layers.Insert(Math.Min(index, _layers.Count), target);
                 }
                 else
                 {
-                    var bitmap = await _images.LoadBitmapAsync(item);
-                    if (!IsCurrentLoad(generation, item.Id)) return;
-                    OverlayImage.Source = bitmap;
+                    target.CopyFrom(sourceLayer);
+                    int currentIndex = _layers.IndexOf(target);
+                    if (currentIndex != index) _layers.Move(currentIndex, Math.Min(index, _layers.Count - 1));
                 }
 
-                _loadedId = item.Id;
-                Hint.Visibility = Visibility.Collapsed;
+                if (_loadedImageIds.TryGetValue(target.LayerId, out var loadedId) &&
+                    !string.Equals(loadedId, target.ImageId, StringComparison.Ordinal))
+                {
+                    RemoveLayerResources(target.LayerId);
+                    target.ImageSource = null;
+                }
+            }
+        }
+
+        private async Task LoadLayerAsync(OverlayLayer layer, ImageRecord item, bool visible)
+        {
+            if (layer == null || item == null || _cleanedUp) return;
+            var layerId = layer.LayerId;
+            var imageId = item.Id;
+            _loadingLayers.Add(layerId);
+            try
+            {
+                // A bounded static decode is used for every layer. It supplies dimensions for
+                // the canvas and is also the fallback frame when the animation budget is full.
+                var bitmap = await _images.LoadBitmapAsync(item, 1280);
+                if (!IsCurrentLayer(layerId, imageId)) return;
+                ApplyInitialSize(layer, bitmap.PixelWidth, bitmap.PixelHeight);
+                layer.ImageSource = bitmap;
+
+                if (item.IsGif && _gifPlayers.Count < MaxAnimatedGifPlayers)
+                {
+                    var file = await _images.GetFileAsync(item);
+                    if (!IsCurrentLayer(layerId, imageId)) return;
+
+                    var player = new GifPlayer();
+                    player.FrameChanged += (s, e) =>
+                    {
+                        if (!_cleanedUp && IsCurrentLayer(layerId, imageId) &&
+                            _gifPlayers.TryGetValue(layerId, out var active) && ReferenceEquals(active, player))
+                            layer.ImageSource = player.CurrentFrame;
+                    };
+                    player.PlaybackFailed += (s, e) =>
+                    {
+                        if (!_cleanedUp && IsCurrentLayer(layerId, imageId))
+                            AppDiagnostics.Log("GIF layer playback", new InvalidOperationException("GIF layer playback stopped."));
+                    };
+                    _gifPlayers[layerId] = player;
+                    await player.OpenAsync(file, CreatePlaybackState(layer));
+                    if (!IsCurrentLayer(layerId, imageId))
+                    {
+                        player.Dispose();
+                        _gifPlayers.Remove(layerId);
+                        return;
+                    }
+                    layer.ImageSource = player.CurrentFrame;
+                    player.SetVisible(visible && layer.GifPlaying);
+                }
+
+                _loadedImageIds[layerId] = imageId;
             }
             catch (Exception ex)
             {
-                AppDiagnostics.Log(item.IsGif ? "Overlay GIF load" : "Overlay image load", ex);
-                if (IsCurrentLoad(generation, item.Id))
-                {
-                    _loadedId = null;
-                    _gif?.Dispose();
-                    _gif = null;
-                    OverlayImage.Source = null;
-                    Hint.Text = "Image could not be displayed";
-                    Hint.Visibility = Visibility.Visible;
-                }
+                AppDiagnostics.Log(item.IsGif ? "Load GIF layer" : "Load image layer", ex);
+                if (IsCurrentLayer(layerId, imageId))
+                    layer.ImageSource = null;
             }
-            finally
+            finally { _loadingLayers.Remove(layerId); }
+        }
+
+        private void ApplyInitialSize(OverlayLayer layer, uint pixelWidth, uint pixelHeight)
+        {
+            if (layer.Width > 0 && layer.Height > 0) return;
+            double width = Math.Max(1, pixelWidth);
+            double height = Math.Max(1, pixelHeight);
+            double availableWidth = Math.Max(160, OverlaySurface.ActualWidth > 0 ? OverlaySurface.ActualWidth * .8 : 300);
+            double availableHeight = Math.Max(120, OverlaySurface.ActualHeight > 0 ? OverlaySurface.ActualHeight * .8 : 300);
+            double scale = Math.Min(1d, Math.Min(availableWidth / width, availableHeight / height));
+            layer.Width = Math.Max(1, width * scale);
+            layer.Height = Math.Max(1, height * scale);
+        }
+
+        private void UpdateLayerPositions()
+        {
+            foreach (var layer in _layers)
+                layer.UpdateCanvasPosition(OverlaySurface.ActualWidth, OverlaySurface.ActualHeight);
+        }
+
+        private void OverlaySurface_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateLayerPositions();
+
+        private OverlayState CreatePlaybackState(OverlayLayer layer)
+        {
+            return new OverlayState { GifSpeed = layer.GifSpeed, GifPlaying = layer.GifPlaying };
+        }
+
+        private bool IsCurrentLayer(string layerId, string imageId)
+        {
+            if (_cleanedUp) return false;
+            var layer = _layers.FirstOrDefault(x => string.Equals(x.LayerId, layerId, StringComparison.Ordinal));
+            return layer != null && string.Equals(layer.ImageId, imageId, StringComparison.Ordinal);
+        }
+
+        private void RemoveLayerResources(string layerId)
+        {
+            if (_gifPlayers.TryGetValue(layerId, out var player))
             {
-                if (generation == _imageLoadGeneration &&
-                    string.Equals(_loadingId, item.Id, StringComparison.Ordinal))
-                    _loadingId = null;
+                player.Dispose();
+                _gifPlayers.Remove(layerId);
             }
+            _loadedImageIds.Remove(layerId);
+            _loadingLayers.Remove(layerId);
         }
 
         private void UpdateVisibilityHotkey(bool enabled)
         {
             if (_widget == null || _cleanedUp) return;
-
             if (!enabled)
             {
                 StopVisibilityHotkey();
                 return;
             }
-
             if (_visibilityHotkeyWatcher != null) return;
             try
             {
-                var keys = new List<VirtualKey>
-                {
-                    VirtualKey.Control,
-                    VirtualKey.Menu, // Alt
-                    VirtualKey.O
-                };
+                var keys = new List<VirtualKey> { VirtualKey.Control, VirtualKey.Menu, VirtualKey.O };
                 var watcher = XboxGameBarHotkeyWatcher.CreateWatcher(_widget, keys);
                 watcher.HotkeySetStateChanged += OnVisibilityHotkeyChanged;
                 watcher.Start();
@@ -301,21 +367,6 @@ namespace PixelOverlay.Views
                     await _widget.MinimizeAsync();
             }
             catch (Exception ex) { AppDiagnostics.Log("Toggle overlay visibility", ex); }
-        }
-
-        private void OverlaySurface_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateTransformCenter();
-
-        private void UpdateTransformCenter()
-        {
-            OverlayTransform.CenterX = OverlaySurface.ActualWidth / 2d;
-            OverlayTransform.CenterY = OverlaySurface.ActualHeight / 2d;
-        }
-
-        private bool IsCurrentLoad(int generation, string imageId)
-        {
-            if (_cleanedUp || generation != _imageLoadGeneration) return false;
-            var current = SettingsStore.Current.GetSnapshot().State;
-            return string.Equals(current?.SelectedImageId, imageId, StringComparison.Ordinal);
         }
     }
 }
