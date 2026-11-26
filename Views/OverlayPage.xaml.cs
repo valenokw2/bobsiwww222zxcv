@@ -312,6 +312,7 @@ namespace PixelOverlay.Views
                         _gifPlayers.Remove(layerId);
                         if (_staticImageCache.TryGetValue(imageId, out var fallback))
                             layer.ImageSource = fallback;
+                        _ = RefreshSafelyAsync();
                     }
                 };
 
