@@ -39,6 +39,7 @@ namespace PixelOverlay.Services
         private bool _loading;
         private bool _disposed;
         private bool _isPlaying = true;
+        private bool _isVisible = true;
         private double _playbackSpeed = 1;
         private int _generation;
 
@@ -126,7 +127,7 @@ namespace PixelOverlay.Services
             _timer.Stop();
             // A settings change can arrive while a frame is being decoded.
             // Keep the timer stopped until the in-flight frame finishes.
-            if (_decoder == null || _disposed || _loading || !_isPlaying || _decoder.FrameCount < 2) return;
+            if (_decoder == null || _disposed || _loading || !_isPlaying || !_isVisible || _decoder.FrameCount < 2) return;
             _timer.Interval = TimeSpan.FromMilliseconds(Math.Max(10, _lastDelayMs / _playbackSpeed));
             _timer.Start();
         }
@@ -303,6 +304,13 @@ namespace PixelOverlay.Services
         {
             if (centiseconds <= 1) return 100;
             return Math.Max(10, centiseconds * 10);
+        }
+
+        public void SetVisible(bool visible)
+        {
+            if (_isVisible == visible) return;
+            _isVisible = visible;
+            ScheduleNextFrame();
         }
 
         public void Stop() => _timer.Stop();
