@@ -176,8 +176,27 @@ namespace PixelOverlay.Models
     [DataContract]
     public sealed class PersistedSettings
     {
-        [DataMember] public OverlayState State { get; set; } = new OverlayState();
-        [DataMember] public System.Collections.Generic.List<ImageRecord> Library { get; set; } = new System.Collections.Generic.List<ImageRecord>();
-        [DataMember] public System.Collections.Generic.List<OverlayProfile> Profiles { get; set; } = new System.Collections.Generic.List<OverlayProfile>();
+        // State is retained for migration from versions that persisted only one overlay.
+        [DataMember(Order = 1)] public OverlayState State { get; set; }
+        [DataMember(Order = 2)] public System.Collections.Generic.List<ImageRecord> Library { get; set; }
+        [DataMember(Order = 3)] public System.Collections.Generic.List<OverlayProfile> Profiles { get; set; }
+        [DataMember(Order = 4)] public System.Collections.Generic.Dictionary<string, WindowInstanceConfig> WindowInstances { get; set; }
+
+        public PersistedSettings()
+        {
+            State = new OverlayState();
+            Library = new System.Collections.Generic.List<ImageRecord>();
+            Profiles = new System.Collections.Generic.List<OverlayProfile>();
+            WindowInstances = new System.Collections.Generic.Dictionary<string, WindowInstanceConfig>(System.StringComparer.Ordinal);
+        }
+
+        [OnDeserializing]
+        private void OnDeserializing(StreamingContext context)
+        {
+            State = new OverlayState();
+            Library = new System.Collections.Generic.List<ImageRecord>();
+            Profiles = new System.Collections.Generic.List<OverlayProfile>();
+            WindowInstances = new System.Collections.Generic.Dictionary<string, WindowInstanceConfig>(System.StringComparer.Ordinal);
+        }
     }
 }
