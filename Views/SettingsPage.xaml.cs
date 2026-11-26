@@ -280,7 +280,7 @@ namespace PixelOverlay.Views
                 }
 
                 layer.DisplayName = item.DisplayName;
-                if (layer.ImageSource != null) continue;
+                if (!layer.IsVisible || layer.ImageSource != null) continue;
                 try
                 {
                     if (!_previewImageCache.TryGetValue(item.Id, out var bitmapSource))
