@@ -137,10 +137,6 @@ namespace PixelOverlay.Views
                 UpdateVisibilityHotkey(state.VisibilityHotkeyEnabled);
 
                 SyncLayerCollection(state.Layers);
-                PruneStaticImageCache();
-                UpdateLayerPositions();
-
-                UpdateHint();
 
                 // Release hidden or paused GIF decoders first, so later visible layers
                 // can claim the freed animation slots in this same refresh pass.
@@ -152,10 +148,12 @@ namespace PixelOverlay.Views
                     {
                         inactivePlayer.Dispose();
                         _gifPlayers.Remove(layer.LayerId);
-                        if (_staticImageCache.TryGetValue(layer.ImageId ?? string.Empty, out var fallback))
-                            layer.ImageSource = fallback;
                     }
                 }
+
+                PruneStaticImageCache();
+                UpdateLayerPositions();
+                UpdateHint();
 
                 foreach (var layer in _layers.OrderBy(x => x.ZIndex).ToList())
                 {
@@ -367,11 +365,18 @@ namespace PixelOverlay.Views
 
         private void PruneStaticImageCache()
         {
+            bool widgetVisible = _widget == null || _widget.Visible;
             var referenced = new HashSet<string>(_layers
-                .Where(x => !string.IsNullOrWhiteSpace(x.ImageId))
+                .Where(x => x.IsVisible && widgetVisible && !string.IsNullOrWhiteSpace(x.ImageId))
                 .Select(x => x.ImageId), StringComparer.Ordinal);
             foreach (var key in _staticImageCache.Keys.Where(x => !referenced.Contains(x)).ToList())
                 _staticImageCache.Remove(key);
+
+            foreach (var layer in _layers)
+            {
+                if (!layer.IsVisible || !widgetVisible)
+                    layer.ImageSource = null;
+            }
         }
 
         private void UpdateLayerPositions()
