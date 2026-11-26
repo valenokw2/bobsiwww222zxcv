@@ -116,7 +116,6 @@ namespace PixelOverlay.Views
             try
             {
                 _gif?.SetVisible(sender != null && sender.Visible);
-            {
                 await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal,
                     () => { _ = RefreshSafelyAsync(); });
             }
