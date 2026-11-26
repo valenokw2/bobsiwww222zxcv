@@ -219,9 +219,10 @@ namespace PixelOverlay.Services
                 {
                     new KeyValuePair<string, object>("DecodePixelWidth", (int)Math.Min(1920u, Math.Max(1u, maxDecodeEdge)))
                 };
-                var cached = ImageCache.Instance.GetFromMemoryCache(cacheUri);
-                if (cached != null) return cached;
-                return await ImageCache.Instance.GetFromCacheAsync(cacheUri, false, CancellationToken.None, parameters);
+                // BitmapImage is dispatcher-affine. Keep Toolkit's disk cache shared,
+                // but create a fresh BitmapImage on the caller's CoreWindow dispatcher.
+                return await ImageCache.Instance.GetFromCacheAsync(
+                    cacheUri, false, CancellationToken.None, parameters);
             }
             catch (Exception ex)
             {
@@ -288,7 +289,7 @@ namespace PixelOverlay.Services
             {
                 if (ImageCacheInitialization == null)
                 {
-                    ImageCache.Instance.MaxMemoryCacheCount = 16;
+                    ImageCache.Instance.MaxMemoryCacheCount = 0;
                     ImageCache.Instance.CacheDuration = TimeSpan.FromDays(14);
                     ImageCacheInitialization = ImageCache.Instance.InitializeAsync(
                         ApplicationData.Current.LocalFolder, "StaticImageCache", new LocalAssetMessageHandler());
