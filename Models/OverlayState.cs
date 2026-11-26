@@ -262,6 +262,7 @@ namespace PixelOverlay.Models
                 GifSpeed = GifSpeed,
                 GifPlaying = GifPlaying,
                 SelectedLayerId = SelectedLayerId,
+                HasLayerSnapshot = true,
                 Layers = _layers.Select(x => x.Clone()).ToList()
             };
         }
@@ -269,7 +270,7 @@ namespace PixelOverlay.Models
         public void Apply(OverlayProfile profile)
         {
             if (profile == null) return;
-            if (profile.Layers != null && profile.Layers.Count > 0)
+            if (profile.HasLayerSnapshot || (profile.Layers != null && profile.Layers.Count > 0))
             {
                 _layers = profile.Layers.Where(x => x != null).Take(MaxLayers).Select(x => x.Clone()).ToList();
                 _selectedLayerId = profile.SelectedLayerId;
@@ -325,6 +326,15 @@ namespace PixelOverlay.Models
         {
             if (_layers == null) _layers = new List<OverlayLayer>();
             _layers = _layers.Where(x => x != null).Take(MaxLayers).ToList();
+            var uniqueIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var layer in _layers)
+            {
+                if (string.IsNullOrWhiteSpace(layer.LayerId) || !uniqueIds.Add(layer.LayerId))
+                {
+                    layer.LayerId = Guid.NewGuid().ToString("N");
+                    uniqueIds.Add(layer.LayerId);
+                }
+            }
 
             if (_layers.Count == 0 && migrateLegacy && !string.IsNullOrWhiteSpace(_selectedImageId))
             {
@@ -371,6 +381,17 @@ namespace PixelOverlay.Models
                 _rotation = layer.Rotation;
                 _gifSpeed = layer.GifSpeed;
                 _gifPlaying = layer.GifPlaying;
+            }
+            else
+            {
+                _selectedImageId = null;
+                _opacity = 100;
+                _scale = 100;
+                _positionX = 0;
+                _positionY = 0;
+                _rotation = 0;
+                _gifSpeed = 1;
+                _gifPlaying = true;
             }
             RaiseLayerProperties();
         }
@@ -435,6 +456,7 @@ namespace PixelOverlay.Models
         [DataMember] public double GifSpeed { get; set; }
         [DataMember] public bool GifPlaying { get; set; }
         [DataMember] public string SelectedLayerId { get; set; }
+        [DataMember] public bool HasLayerSnapshot { get; set; }
         [DataMember] public List<OverlayLayer> Layers { get; set; }
 
         public OverlayProfile Clone()
@@ -450,6 +472,7 @@ namespace PixelOverlay.Models
                 GifSpeed = GifSpeed,
                 GifPlaying = GifPlaying,
                 SelectedLayerId = SelectedLayerId,
+                HasLayerSnapshot = HasLayerSnapshot,
                 Layers = Layers == null ? null : Layers.Where(x => x != null).Take(OverlayState.MaxLayers).Select(x => x.Clone()).ToList()
             };
         }
