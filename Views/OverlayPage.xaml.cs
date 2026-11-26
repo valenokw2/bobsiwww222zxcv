@@ -136,13 +136,7 @@ namespace PixelOverlay.Views
                 SyncLayerCollection(state.Layers);
                 UpdateLayerPositions();
 
-                Hint.Visibility = _layers.Any(x => x.IsVisible && x.ImageSource != null)
-                    ? Visibility.Collapsed : Visibility.Visible;
-                Hint.Text = _layers.Count == 0
-                    ? "Open this widget's settings to add images"
-                    : _layers.Any(x => x.IsVisible)
-                        ? "Loading images or no layer could be displayed."
-                        : "No visible layers. Show a layer in Pixel Overlay Settings.";
+                UpdateHint();
 
                 foreach (var layer in _layers.OrderBy(x => x.ZIndex).ToList())
                 {
@@ -170,8 +164,21 @@ namespace PixelOverlay.Views
 
                     await LoadLayerAsync(layer, item, visible);
                 }
+
+                UpdateHint();
             }
             finally { _refreshGate.Release(); }
+        }
+
+        private void UpdateHint()
+        {
+            Hint.Visibility = _layers.Any(x => x.IsVisible && x.ImageSource != null)
+                ? Visibility.Collapsed : Visibility.Visible;
+            Hint.Text = _layers.Count == 0
+                ? "Open this widget's settings to add images"
+                : _layers.Any(x => x.IsVisible)
+                    ? "Images could not be displayed. Check the image library."
+                    : "No visible layers. Show a layer in Pixel Overlay Settings.";
         }
 
         private void SyncLayerCollection(IList<OverlayLayer> source)
