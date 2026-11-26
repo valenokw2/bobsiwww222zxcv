@@ -66,6 +66,7 @@ namespace PixelOverlay.Views
                     _widget.GameBarDisplayModeChanged += OnWidgetStateChanged;
                     _widget.VisibleChanged += OnWidgetStateChanged;
                     _widget.ClickThroughEnabledChanged += OnWidgetStateChanged;
+                    SettingsStore.Current.SetWindowClickThrough(_windowId, _widget.ClickThroughEnabled);
                 }
                 await RefreshAsync();
             }
@@ -119,6 +120,8 @@ namespace PixelOverlay.Views
                 await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
                 {
                     _gif?.SetVisible(visible);
+                    if (sender != null)
+                        SettingsStore.Current.SetWindowClickThrough(_windowId, sender.ClickThroughEnabled);
                     _ = RefreshSafelyAsync();
                 });
             }
