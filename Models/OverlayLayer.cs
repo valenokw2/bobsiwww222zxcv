@@ -63,8 +63,8 @@ namespace PixelOverlay.Models
         public double Height { get => _height; set { if (Set(ref _height, Clamp(value, 0, 8192, 0))) { Raise(nameof(TransformCenterY)); Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY); } } }
         public double Opacity { get => _opacity; set { if (Set(ref _opacity, Clamp(value, 0, 100, 100))) Raise(nameof(OpacityFactor)); } }
         public double Scale { get => _scale; set { if (Set(ref _scale, Clamp(value, 10, 500, 100))) Raise(nameof(ScaleFactor)); } }
-        public double PositionX { get => _positionX; set { if (Set(ref _positionX, Clamp(value, -100000, 100000, 0))) Raise(nameof(PositionX)); } }
-        public double PositionY { get => _positionY; set { if (Set(ref _positionY, Clamp(value, -100000, 100000, 0))) Raise(nameof(PositionY)); } }
+        public double PositionX { get => _positionX; set { if (Set(ref _positionX, Clamp(value, -100000, 100000, 0))) Reposition(_surfaceWidth / 2d + _positionX, _surfaceHeight / 2d + _positionY); } }
+        public double PositionY { get => _positionY; set { if (Set(ref _positionY, Clamp(value, -100000, 100000, 0))) Reposition(_surfaceWidth / 2d + _positionX, _surfaceHeight / 2d + _positionY); } }
         public double Rotation { get => _rotation; set => Set(ref _rotation, Clamp(value, 0, 360, 0)); }
         public double GifSpeed { get => _gifSpeed; set => Set(ref _gifSpeed, Clamp(value, .25, 4, 1)); }
         public bool GifPlaying { get => _gifPlaying; set => Set(ref _gifPlaying, value); }
