@@ -375,7 +375,10 @@ namespace PixelOverlay.Views
             foreach (var layer in _layers)
             {
                 if (!layer.IsVisible || !widgetVisible)
+                {
                     layer.ImageSource = null;
+                    _loadedImageIds.Remove(layer.LayerId);
+                }
             }
         }
 
