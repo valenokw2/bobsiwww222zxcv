@@ -29,7 +29,7 @@
     <Optimize>true</Optimize><DebugType>pdbonly</DebugType><PlatformTarget>x64</PlatformTarget><UseDotNetNativeToolchain>true</UseDotNetNativeToolchain>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="App.xaml.cs" /><Compile Include="Models\*.cs" /><Compile Include="Services\*.cs" /><Compile Include="Views\*.xaml.cs" /><Compile Include="Properties\*.cs" />
+    <Compile Include="App.xaml.cs" /><Compile Include="Models\**\*.cs" /><Compile Include="Services\**\*.cs" /><Compile Include="Views\**\*.xaml.cs" /><Compile Include="Properties\*.cs" />
     <ApplicationDefinition Include="App.xaml" /><Page Include="Views\*.xaml" />
     <AppxManifest Include="Package.appxmanifest" />
     <Content Include="Assets\**\*" /><Content Include="PixelOverlay\**\*" /><Content Include="Properties\Default.rd.xml" />
@@ -41,6 +41,9 @@
     <!-- PackageReference-style UWP projects need the managed UWP reference set explicitly. -->
     <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform" Version="6.2.14" />
     <PackageReference Include="Microsoft.Gaming.XboxGameBar" Version="7.3.2607010" />
+    <PackageReference Include="Microsoft.UI.Xaml" Version="2.8.7" />
+    <PackageReference Include="Microsoft.Toolkit.Uwp.UI" Version="7.1.2" />
+    <PackageReference Include="Microsoft.Toolkit.Uwp.UI.Controls" Version="7.1.2" />
   </ItemGroup>
   <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">
     <VisualStudioVersion>14.0</VisualStudioVersion>
