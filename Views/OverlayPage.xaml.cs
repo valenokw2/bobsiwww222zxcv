@@ -171,6 +171,7 @@ namespace PixelOverlay.Views
 
                     bool visible = layer.IsVisible && (_widget == null || _widget.Visible);
                     bool shouldAnimate = visible && layer.GifPlaying;
+                    if (!visible) continue;
 
                     if (_loadedImageIds.TryGetValue(layer.LayerId, out var loadedId) &&
                         string.Equals(loadedId, item.Id, StringComparison.Ordinal))
