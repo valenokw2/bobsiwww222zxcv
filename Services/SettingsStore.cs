@@ -196,6 +196,29 @@ namespace PixelOverlay.Services
             }
         }
 
+        public void SetWindowClickThrough(string windowId, bool enabled)
+        {
+            windowId = WindowSlotIds.Normalize(windowId);
+            bool changed = false;
+            lock (_sync)
+            {
+                if (!_loaded) return;
+                var config = GetWindowConfigLocked(windowId);
+                if (config.ClickThroughEnabled != enabled)
+                {
+                    config.ClickThroughEnabled = enabled;
+                    changed = true;
+                    MarkDirtyLocked();
+                }
+            }
+
+            if (changed)
+            {
+                PublishChanged();
+                PublishWindowChanged(windowId);
+            }
+        }
+
         public bool IsFavorite(string windowId, string imageId)
         {
             if (string.IsNullOrWhiteSpace(imageId)) return false;
