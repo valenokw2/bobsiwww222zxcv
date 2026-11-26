@@ -148,6 +148,8 @@ namespace PixelOverlay.Views
                     {
                         inactivePlayer.Dispose();
                         _gifPlayers.Remove(layer.LayerId);
+                        if (_staticImageCache.TryGetValue(layer.ImageId ?? string.Empty, out var fallback))
+                            layer.ImageSource = fallback;
                     }
                 }
 
