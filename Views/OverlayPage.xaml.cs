@@ -27,6 +27,7 @@ namespace PixelOverlay.Views
         private readonly Dictionary<string, string> _loadedImageIds = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly Dictionary<string, BitmapImage> _staticImageCache = new Dictionary<string, BitmapImage>(StringComparer.Ordinal);
         private readonly HashSet<string> _loadingLayers = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _failedGifLayers = new HashSet<string>(StringComparer.Ordinal);
         private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
         private bool _cleanedUp;
         private XboxGameBarHotkeyWatcher _visibilityHotkeyWatcher;
@@ -93,6 +94,7 @@ namespace PixelOverlay.Views
             _loadedImageIds.Clear();
             _staticImageCache.Clear();
             _loadingLayers.Clear();
+            _failedGifLayers.Clear();
             _layers.Clear();
         }
 
@@ -144,6 +146,7 @@ namespace PixelOverlay.Views
                 {
                     if (layer.IsVisible && (_widget == null || _widget.Visible) && layer.GifPlaying)
                         continue;
+                    _failedGifLayers.Remove(layer.LayerId);
                     if (_gifPlayers.TryGetValue(layer.LayerId, out var inactivePlayer))
                     {
                         inactivePlayer.Dispose();
@@ -285,7 +288,8 @@ namespace PixelOverlay.Views
         private async Task EnsureGifPlayerAsync(OverlayLayer layer, ImageRecord item)
         {
             if (_cleanedUp || layer == null || item == null || !item.IsGif ||
-                _gifPlayers.ContainsKey(layer.LayerId) || _gifPlayers.Count >= MaxAnimatedGifPlayers ||
+                _gifPlayers.ContainsKey(layer.LayerId) || _failedGifLayers.Contains(layer.LayerId) ||
+                _gifPlayers.Count >= MaxAnimatedGifPlayers ||
                 !layer.IsVisible || (_widget != null && !_widget.Visible) || !layer.GifPlaying)
                 return;
 
@@ -308,6 +312,7 @@ namespace PixelOverlay.Views
                 {
                     if (_cleanedUp || !IsCurrentLayer(layerId, imageId)) return;
                     AppDiagnostics.Log("GIF layer playback", new InvalidOperationException("GIF layer playback stopped."));
+                    _failedGifLayers.Add(layerId);
                     if (_gifPlayers.TryGetValue(layerId, out var failed) && ReferenceEquals(failed, player))
                     {
                         failed.Dispose();
@@ -344,6 +349,7 @@ namespace PixelOverlay.Views
                     if (_gifPlayers.TryGetValue(layerId, out var failed) && ReferenceEquals(failed, player))
                         _gifPlayers.Remove(layerId);
                 }
+                _failedGifLayers.Add(layerId);
                 if (IsCurrentLayer(layerId, imageId) &&
                     _staticImageCache.TryGetValue(imageId, out var fallback))
                 {
@@ -412,6 +418,7 @@ namespace PixelOverlay.Views
             }
             _loadedImageIds.Remove(layerId);
             _loadingLayers.Remove(layerId);
+            _failedGifLayers.Remove(layerId);
         }
 
         private void UpdateVisibilityHotkey(bool enabled)
