@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -21,7 +25,21 @@ namespace PixelOverlayInstaller
     {
         internal const string AppVersion = "__APP_VERSION__";
         internal const string AppInstallerUri = "__APP_INSTALLER_URI__";
-        internal const string CertificateThumbprint = "A68A682C3193352F350F0FC6D7A5F8990863E150";
+        // Trust decisions are pinned to the SHA-256 digest of the complete DER certificate.
+        internal const string CertificateSha256 = "65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F";
+
+        internal static bool IsExpectedPublisherCertificate(X509Certificate2 certificate)
+        {
+            if (certificate == null ||
+                !String.Equals(certificate.Subject, "CN=PixelOverlayDeveloper", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                string digest = BitConverter.ToString(sha256.ComputeHash(certificate.RawData)).Replace("-", "");
+                return String.Equals(digest, CertificateSha256, StringComparison.OrdinalIgnoreCase);
+            }
+        }
 
         [STAThread]
         private static int Main(string[] args)
@@ -40,16 +58,24 @@ namespace PixelOverlayInstaller
             try
             {
                 X509Certificate2 certificate = new X509Certificate2(path);
-                if (!String.Equals(certificate.Subject, "CN=PixelOverlayDeveloper", StringComparison.OrdinalIgnoreCase) ||
-                    !String.Equals(certificate.Thumbprint, CertificateThumbprint, StringComparison.OrdinalIgnoreCase))
+                if (!IsExpectedPublisherCertificate(certificate))
                     return 11;
 
                 using (X509Store store = new X509Store(StoreName.TrustedPeople, StoreLocation.LocalMachine))
                 {
                     store.Open(OpenFlags.ReadWrite);
                     X509Certificate2Collection found = store.Certificates.Find(
-                        X509FindType.FindByThumbprint, CertificateThumbprint, false);
-                    if (found.Count == 0)
+                        X509FindType.FindBySubjectName, "PixelOverlayDeveloper", false);
+                    bool alreadyTrusted = false;
+                    foreach (X509Certificate2 existing in found)
+                    {
+                        if (IsExpectedPublisherCertificate(existing))
+                        {
+                            alreadyTrusted = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyTrusted)
                         store.Add(certificate);
                 }
                 return 0;
@@ -98,8 +124,7 @@ namespace PixelOverlayInstaller
                 "PixelOverlay", "Installer");
             Directory.CreateDirectory(root);
             logPath = Path.Combine(root, "Setup.log");
-            payloadDirectory = Path.Combine(Path.GetTempPath(), "PixelOverlaySetup-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(payloadDirectory);
+            payloadDirectory = CreateSecurePayloadDirectory();
 
             scriptPath = ExtractResource(
                 "PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1",
@@ -248,17 +273,110 @@ namespace PixelOverlayInstaller
             FormClosing += SetupFormClosing;
         }
 
+        private static readonly Dictionary<string, string> PayloadSha256 =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+__PAYLOAD_SHA256_ENTRIES__
+            };
+
+        private static string CreateSecurePayloadDirectory()
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (String.IsNullOrWhiteSpace(localAppData))
+                throw new InvalidOperationException("Windows did not provide a Local AppData directory.");
+
+            string root = Path.Combine(localAppData, "PixelOverlay", "Installer");
+            Directory.CreateDirectory(root);
+
+            SecurityIdentifier currentUser = WindowsIdentity.GetCurrent().User;
+            if (currentUser == null)
+                throw new InvalidOperationException("Could not determine the current Windows user SID.");
+
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                string path = Path.Combine(root, "Staging-" + Guid.NewGuid().ToString("N"));
+                if (Directory.Exists(path) || File.Exists(path))
+                    continue;
+
+                DirectorySecurity security = new DirectorySecurity();
+                security.SetAccessRuleProtection(true, false);
+                security.SetOwner(currentUser);
+                AddPrivateDirectoryRule(security, currentUser);
+                AddPrivateDirectoryRule(security, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
+                AddPrivateDirectoryRule(security, new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+
+                try
+                {
+                    DirectoryInfo directory = Directory.CreateDirectory(path, security);
+                    DirectorySecurity appliedSecurity = directory.GetAccessControl();
+                    bool ownerIsCurrentUser = currentUser.Equals(appliedSecurity.GetOwner(typeof(SecurityIdentifier)));
+                    AuthorizationRuleCollection accessRules = appliedSecurity.GetAccessRules(true, true, typeof(SecurityIdentifier));
+                    if ((directory.Attributes & FileAttributes.ReparsePoint) != 0 ||
+                        !appliedSecurity.AreAccessRulesProtected ||
+                        !ownerIsCurrentUser ||
+                        accessRules.Count != 3)
+                    {
+                        try { directory.Delete(true); } catch { }
+                        throw new InvalidOperationException("The installer staging directory ACL or filesystem type failed its security check.");
+                    }
+                    return directory.FullName;
+                }
+                catch (IOException)
+                {
+                    if (Directory.Exists(path)) continue;
+                    throw;
+                }
+            }
+
+            throw new IOException("Could not create a unique private installer staging directory.");
+        }
+
+        private static void AddPrivateDirectoryRule(DirectorySecurity security, IdentityReference identity)
+        {
+            security.AddAccessRule(new FileSystemAccessRule(
+                identity,
+                FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None,
+                AccessControlType.Allow));
+        }
+
+        private static string ComputeSha256(string path)
+        {
+            using (SHA256 sha256 = SHA256.Create())
+            using (FileStream input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+                return BitConverter.ToString(sha256.ComputeHash(input)).Replace("-", "");
+        }
+
         private string ExtractResource(string resourceName, string fileName)
         {
+            string expectedHash;
+            if (!PayloadSha256.TryGetValue(resourceName, out expectedHash) ||
+                String.IsNullOrWhiteSpace(expectedHash) || expectedHash.Length != 64)
+                throw new InvalidOperationException("Installer has no valid SHA-256 pin for resource: " + resourceName);
+
             string path = Path.Combine(payloadDirectory, fileName);
-            using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName))
+            try
             {
-                if (stream == null)
-                    throw new InvalidOperationException("Installer payload is incomplete: " + fileName);
-                using (FileStream output = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
-                    stream.CopyTo(output);
+                using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName))
+                {
+                    if (stream == null)
+                        throw new InvalidOperationException("Installer payload is incomplete: " + fileName);
+                    using (FileStream output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                        stream.CopyTo(output);
+                }
+
+                string actualHash = ComputeSha256(path);
+                if (!String.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("SHA-256 verification failed for embedded installer payload: " + fileName);
+
+                return path;
             }
-            return path;
+            catch
+            {
+                try { if (File.Exists(path)) File.Delete(path); } catch { }
+                throw;
+            }
         }
 
         private void ExtractEmbeddedDependencies()
@@ -521,16 +639,19 @@ namespace PixelOverlayInstaller
         private void EnsureCertificateTrusted()
         {
             X509Certificate2 certificate = new X509Certificate2(certificatePath);
-            if (!String.Equals(certificate.Subject, "CN=PixelOverlayDeveloper", StringComparison.OrdinalIgnoreCase) ||
-                !String.Equals(certificate.Thumbprint, Program.CertificateThumbprint, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("The embedded publisher certificate failed its identity check.");
+            if (!Program.IsExpectedPublisherCertificate(certificate))
+                throw new InvalidOperationException("The embedded publisher certificate failed its SHA-256 identity check.");
 
             using (X509Store store = new X509Store(StoreName.TrustedPeople, StoreLocation.LocalMachine))
             {
                 store.Open(OpenFlags.ReadOnly);
                 X509Certificate2Collection found = store.Certificates.Find(
-                    X509FindType.FindByThumbprint, Program.CertificateThumbprint, false);
-                if (found.Count > 0) return;
+                    X509FindType.FindBySubjectName, "PixelOverlayDeveloper", false);
+                foreach (X509Certificate2 existing in found)
+                {
+                    if (Program.IsExpectedPublisherCertificate(existing))
+                        return;
+                }
             }
 
             ProcessStartInfo start = new ProcessStartInfo();

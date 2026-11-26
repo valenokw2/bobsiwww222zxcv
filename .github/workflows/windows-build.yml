@@ -224,9 +224,35 @@ jobs:
             throw 'The single-file installer source files are missing.'
           }
 
+          $payloadEntries = @(
+            [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.PixelOverlay.msix'; Path = $mainAsset },
+            [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.PixelOverlay.cer'; Path = (Join-Path $assetDirectory 'PixelOverlay.cer') },
+            [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1'; Path = $installerScript }
+          )
+          for ($index = 0; $index -lt $dependencyPaths.Count; $index++) {
+            $payloadEntries += [pscustomobject]@{
+              ResourceName = $dependencyResourceNames[$index]
+              Path = $dependencyPaths[$index]
+            }
+          }
+          $payloadHashLines = @(
+            foreach ($entry in $payloadEntries) {
+              if (!(Test-Path -LiteralPath $entry.Path)) { throw "Cannot hash missing installer payload: $($entry.Path)" }
+              $hash = (Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash
+              '                { "' + $entry.ResourceName + '", "' + $hash + '" }'
+            }
+          )
+          if ($payloadHashLines.Count -ne $payloadEntries.Count -or $payloadHashLines.Count -lt 3) {
+            throw 'Could not generate the complete embedded payload SHA-256 table.'
+          }
+
           $installerCode = Get-Content -LiteralPath $installerSource -Raw
           $installerCode = $installerCode.Replace('__APP_VERSION__', $env:RELEASE_VERSION)
           $installerCode = $installerCode.Replace('__APP_INSTALLER_URI__', $env:RELEASE_SETUP_UPDATE_URI)
+          $installerCode = $installerCode.Replace('__PAYLOAD_SHA256_ENTRIES__', ($payloadHashLines -join ', '))
+          if ($installerCode.Contains('__PAYLOAD_SHA256_ENTRIES__')) {
+            throw 'The installer payload SHA-256 table placeholder was not replaced.'
+          }
           $generatedSource = Join-Path $env:RUNNER_TEMP 'PixelOverlayInstaller.cs'
           [IO.File]::WriteAllText($generatedSource, $installerCode, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -265,14 +291,29 @@ jobs:
           }
 
           $signingCertificate = Get-ChildItem Cert:\CurrentUser\My |
-            Where-Object { $_.Thumbprint -eq 'A68A682C3193352F350F0FC6D7A5F8990863E150' } |
+            Where-Object { $_.Subject -eq 'CN=PixelOverlayDeveloper' -and $_.HasPrivateKey } |
+            Where-Object {
+              $sha256 = [System.Security.Cryptography.SHA256]::Create()
+              try {
+                $fingerprint = [BitConverter]::ToString($sha256.ComputeHash($_.RawData)).Replace('-', '')
+              }
+              finally { $sha256.Dispose() }
+              $fingerprint -eq '65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F'
+            } |
             Select-Object -First 1
           if (!$signingCertificate -or !$signingCertificate.HasPrivateKey) {
             throw 'The persistent Pixel Overlay signing certificate with its private key was not available to sign the setup executable.'
           }
           $setupSignature = Set-AuthenticodeSignature -FilePath $setupPath -Certificate $signingCertificate -HashAlgorithm SHA256
-          if (!$setupSignature.SignerCertificate -or $setupSignature.SignerCertificate.Thumbprint -ne $signingCertificate.Thumbprint) {
-            throw 'The single-file setup executable could not be signed with the Pixel Overlay publisher certificate.'
+          $setupSigner = $setupSignature.SignerCertificate
+          if (!$setupSigner -or $setupSigner.Subject -ne 'CN=PixelOverlayDeveloper') {
+            throw 'The single-file setup executable has no expected Pixel Overlay Authenticode signer.'
+          }
+          $signerHash = [System.Security.Cryptography.SHA256]::Create()
+          try { $signerSha256 = [BitConverter]::ToString($signerHash.ComputeHash($setupSigner.RawData)).Replace('-', '') }
+          finally { $signerHash.Dispose() }
+          if ($signerSha256 -ne '65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F') {
+            throw 'The single-file setup executable was not signed by the pinned Pixel Overlay SHA-256 certificate.'
           }
 
           $setupAssembly = [Reflection.Assembly]::LoadFile($setupPath)

@@ -79,7 +79,7 @@ jobs:
             if ($mainPackages.Count -ne 1) {
               throw "Expected exactly one main MSIX package outside Dependencies; found $($mainPackages.Count)."
             }
-            $mainAsset = Join-Path $assetDirectory 'PixelOverlay-1.0.3.0-x64.msix'
+            $mainAsset = Join-Path $assetDirectory 'PixelOverlay-1.0.5.0-x64.msix'
             Copy-Item -LiteralPath $mainPackages[0].FullName -Destination $mainAsset
 
             $dependencyDirectories = @(Get-ChildItem -Path $packageOutput -Directory -Recurse |
@@ -126,7 +126,7 @@ jobs:
             $appInstallerArgs = @{
               MainPackagePath = $mainAsset
               DependencyPaths = $dependencyPaths
-              Version = '1.0.3.0'
+              Version = '1.0.5.0'
               ReleaseTag = 'validation'
               RepositoryFullName = 'valenokw2/bobsiwww222zxcv'
               ManifestUri = 'https://github.com/valenokw2/bobsiwww222zxcv/releases/download/validation/PixelOverlay.appinstaller'
@@ -137,9 +137,35 @@ jobs:
 
             $installerSource = Join-Path $env:GITHUB_WORKSPACE 'installer\PixelOverlayInstaller.cs'
             $installerScript = Join-Path $env:GITHUB_WORKSPACE 'installer\Install-PixelOverlay.ps1'
+            $payloadEntries = @(
+              [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.PixelOverlay.msix'; Path = $mainAsset },
+              [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.PixelOverlay.cer'; Path = $certificateAsset },
+              [pscustomobject]@{ ResourceName = 'PixelOverlayInstaller.Payload.Install-PixelOverlay.ps1'; Path = $installerScript }
+            )
+            for ($index = 0; $index -lt $dependencyPaths.Count; $index++) {
+              $payloadEntries += [pscustomobject]@{
+                ResourceName = $dependencyResourceNames[$index]
+                Path = $dependencyPaths[$index]
+              }
+            }
+            $payloadHashLines = @(
+              foreach ($entry in $payloadEntries) {
+                if (!(Test-Path -LiteralPath $entry.Path)) { throw "Cannot hash missing installer payload: $($entry.Path)" }
+                $hash = (Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash
+                '                { "' + $entry.ResourceName + '", "' + $hash + '" }'
+              }
+            )
+            if ($payloadHashLines.Count -ne $payloadEntries.Count -or $payloadHashLines.Count -lt 3) {
+              throw 'Could not generate the complete embedded payload SHA-256 table.'
+            }
+
             $installerCode = Get-Content -LiteralPath $installerSource -Raw
-            $installerCode = $installerCode.Replace('__APP_VERSION__', '1.0.3.0')
+            $installerCode = $installerCode.Replace('__APP_VERSION__', '1.0.5.0')
             $installerCode = $installerCode.Replace('__APP_INSTALLER_URI__', '')
+            $installerCode = $installerCode.Replace('__PAYLOAD_SHA256_ENTRIES__', ($payloadHashLines -join ', '))
+            if ($installerCode.Contains('__PAYLOAD_SHA256_ENTRIES__')) {
+              throw 'The installer payload SHA-256 table placeholder was not replaced.'
+            }
             $generatedSource = Join-Path $env:RUNNER_TEMP 'PixelOverlayInstaller.Validation.cs'
             [IO.File]::WriteAllText($generatedSource, $installerCode, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -177,14 +203,29 @@ jobs:
             }
 
             $signingCertificate = Get-ChildItem Cert:\CurrentUser\My |
-              Where-Object { $_.Thumbprint -eq 'A68A682C3193352F350F0FC6D7A5F8990863E150' } |
+              Where-Object { $_.Subject -eq 'CN=PixelOverlayDeveloper' -and $_.HasPrivateKey } |
+              Where-Object {
+                $sha256 = [System.Security.Cryptography.SHA256]::Create()
+                try {
+                  $fingerprint = [BitConverter]::ToString($sha256.ComputeHash($_.RawData)).Replace('-', '')
+                }
+                finally { $sha256.Dispose() }
+                $fingerprint -eq '65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F'
+              } |
               Select-Object -First 1
             if (!$signingCertificate -or !$signingCertificate.HasPrivateKey) {
               throw 'The persistent signing certificate with its private key was not imported.'
             }
             $signature = Set-AuthenticodeSignature -FilePath $setupPath -Certificate $signingCertificate -HashAlgorithm SHA256
-            if (!$signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $signingCertificate.Thumbprint) {
-              throw 'The validation setup EXE could not be Authenticode-signed.'
+            $validationSigner = $signature.SignerCertificate
+            if (!$validationSigner -or $validationSigner.Subject -ne 'CN=PixelOverlayDeveloper') {
+              throw 'The validation setup EXE has no expected Pixel Overlay Authenticode signer.'
+            }
+            $signerHash = [System.Security.Cryptography.SHA256]::Create()
+            try { $signerSha256 = [BitConverter]::ToString($signerHash.ComputeHash($validationSigner.RawData)).Replace('-', '') }
+            finally { $signerHash.Dispose() }
+            if ($signerSha256 -ne '65EBD21ACD334C64F84A61048CD987B958449EF193BF8A1EE5C2A8604F311D4F') {
+              throw 'The validation setup EXE was not signed by the pinned Pixel Overlay SHA-256 certificate.'
             }
 
             $assembly = [Reflection.Assembly]::LoadFile($setupPath)
@@ -218,7 +259,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: PixelOverlay-1.0.3.0-Setup-Validation
+          name: PixelOverlay-1.0.5.0-Setup-Validation
           path: ${{ runner.temp }}/PixelOverlay-Validation-Assets/PixelOverlay-Setup-Validation.exe
           if-no-files-found: error
           retention-days: 7

@@ -16,6 +16,21 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+function ConvertFrom-SafeXmlText {
+    param([Parameter(Mandatory = $true)][string]$XmlText)
+
+    $settings = New-Object System.Xml.XmlReaderSettings
+    $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver = $null
+    $settings.MaxCharactersInDocument = 2097152
+    $document = New-Object System.Xml.XmlDocument
+    $document.XmlResolver = $null
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($XmlText), $settings)
+    try { $document.Load($reader) }
+    finally { $reader.Dispose() }
+    return ,$document
+}
+
 function Get-PackageManifestInfo {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -31,7 +46,8 @@ function Get-PackageManifestInfo {
         try {
             $reader = New-Object System.IO.StreamReader($stream)
             try {
-                [xml]$manifest = $reader.ReadToEnd()
+                $manifestText = $reader.ReadToEnd()
+                $manifest = ConvertFrom-SafeXmlText -XmlText $manifestText
             }
             finally { $reader.Dispose() }
         }
@@ -197,7 +213,7 @@ $writer = [System.Xml.XmlWriter]::Create($OutputPath, $settings)
 try { $document.Save($writer) }
 finally { $writer.Dispose() }
 
-[xml]$validation = Get-Content -LiteralPath $OutputPath -Raw
+$validation = ConvertFrom-SafeXmlText -XmlText (Get-Content -LiteralPath $OutputPath -Raw)
 if ($validation.DocumentElement.GetAttribute('Uri') -ne $ManifestUri) {
     throw 'The App Installer manifest Uri does not match ManifestUri.'
 }

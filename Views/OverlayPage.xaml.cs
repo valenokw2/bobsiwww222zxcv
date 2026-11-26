@@ -1,11 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Gaming.XboxGameBar;
+using Microsoft.Gaming.XboxGameBar.Input;
 using PixelOverlay.Models;
 using PixelOverlay.Services;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.System;
 
 namespace PixelOverlay.Views
 {
@@ -18,6 +21,7 @@ namespace PixelOverlay.Views
         private string _loadingId;
         private int _imageLoadGeneration;
         private bool _cleanedUp;
+        private XboxGameBarHotkeyWatcher _visibilityHotkeyWatcher;
 
         public OverlayPage()
         {
@@ -65,6 +69,7 @@ namespace PixelOverlay.Views
             _cleanedUp = true;
 
             SettingsStore.Current.StateChanged -= OnStateChanged;
+            StopVisibilityHotkey();
             if (_widget != null)
             {
                 _widget.RequestedOpacityChanged -= OnWidgetStateChanged;
@@ -115,13 +120,17 @@ namespace PixelOverlay.Views
             var state = snapshot.State ?? new OverlayState();
 
             OverlayImage.Opacity = state.Opacity / 100d;
+            UpdateVisibilityHotkey(state.VisibilityHotkeyEnabled);
             OverlayTransform.ScaleX = OverlayTransform.ScaleY = state.Scale / 100d;
             OverlayTransform.TranslateX = state.PositionX;
             OverlayTransform.TranslateY = state.PositionY;
             OverlayTransform.Rotation = state.Rotation;
 
-            // RequestedOpacity belongs to the Game Bar surface and only affects this image-only widget.
-            OverlaySurface.Opacity = _widget == null ? 1 : _widget.RequestedOpacity / 100d;
+            // The Xbox Game Bar sample applies RequestedOpacity directly to a XAML Opacity
+            // property. Do not divide the SDK value by 100 here.
+            OverlaySurface.Opacity = _widget == null || state.IgnoreGameBarOpacity
+                ? 1d
+                : _widget.RequestedOpacity;
 
             var item = snapshot.Library?.FirstOrDefault(x =>
                 string.Equals(x.Id, state.SelectedImageId, StringComparison.Ordinal));
@@ -224,6 +233,74 @@ namespace PixelOverlay.Views
                     string.Equals(_loadingId, item.Id, StringComparison.Ordinal))
                     _loadingId = null;
             }
+        }
+
+        private void UpdateVisibilityHotkey(bool enabled)
+        {
+            if (_widget == null || _cleanedUp) return;
+
+            if (!enabled)
+            {
+                StopVisibilityHotkey();
+                return;
+            }
+
+            if (_visibilityHotkeyWatcher != null) return;
+            try
+            {
+                var keys = new List<VirtualKey>
+                {
+                    VirtualKey.Control,
+                    VirtualKey.Menu, // Alt
+                    VirtualKey.O
+                };
+                var watcher = XboxGameBarHotkeyWatcher.CreateWatcher(_widget, keys);
+                watcher.HotkeySetStateChanged += OnVisibilityHotkeyChanged;
+                watcher.Start();
+                _visibilityHotkeyWatcher = watcher;
+            }
+            catch (Exception ex)
+            {
+                AppDiagnostics.Log("Start overlay visibility hotkey", ex);
+                StopVisibilityHotkey();
+            }
+        }
+
+        private void StopVisibilityHotkey()
+        {
+            var watcher = _visibilityHotkeyWatcher;
+            _visibilityHotkeyWatcher = null;
+            if (watcher == null) return;
+            try
+            {
+                watcher.HotkeySetStateChanged -= OnVisibilityHotkeyChanged;
+                watcher.Stop();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Stop overlay visibility hotkey", ex); }
+        }
+
+        private async void OnVisibilityHotkeyChanged(XboxGameBarHotkeyWatcher sender, HotkeySetStateChangedArgs args)
+        {
+            if (!args.HotkeySetDown || _cleanedUp) return;
+            try
+            {
+                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal,
+                    () => { _ = ToggleWidgetVisibilityAsync(); });
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Overlay visibility hotkey dispatch", ex); }
+        }
+
+        private async Task ToggleWidgetVisibilityAsync()
+        {
+            if (_cleanedUp || _widget == null) return;
+            try
+            {
+                if (_widget.WindowState == XboxGameBarWidgetWindowState.Minimized)
+                    await _widget.RestoreAsync();
+                else
+                    await _widget.MinimizeAsync();
+            }
+            catch (Exception ex) { AppDiagnostics.Log("Toggle overlay visibility", ex); }
         }
 
         private void OverlaySurface_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateTransformCenter();

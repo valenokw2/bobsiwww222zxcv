@@ -14,6 +14,8 @@ namespace PixelOverlay.Models
         [DataMember] private double _rotation;
         [DataMember] private double _gifSpeed;
         [DataMember] private bool _gifPlaying;
+        [DataMember] private bool _ignoreGameBarOpacity;
+        [DataMember] private bool _visibilityHotkeyEnabled;
 
         public OverlayState() { SetDefaults(); }
 
@@ -29,6 +31,8 @@ namespace PixelOverlay.Models
             _rotation = 0;
             _gifSpeed = 1;
             _gifPlaying = true;
+            _ignoreGameBarOpacity = false;
+            _visibilityHotkeyEnabled = false;
         }
 
         public string SelectedImageId { get => _selectedImageId; set => Set(ref _selectedImageId, value); }
@@ -39,6 +43,8 @@ namespace PixelOverlay.Models
         public double Rotation { get => _rotation; set { if (Set(ref _rotation, ClampFinite(value, 0, 360, _rotation))) Raise(nameof(RotationText)); } }
         public double GifSpeed { get => _gifSpeed; set { if (Set(ref _gifSpeed, ClampFinite(value, .25, 4, _gifSpeed))) Raise(nameof(GifSpeedText)); } }
         public bool GifPlaying { get => _gifPlaying; set => Set(ref _gifPlaying, value); }
+        public bool IgnoreGameBarOpacity { get => _ignoreGameBarOpacity; set => Set(ref _ignoreGameBarOpacity, value); }
+        public bool VisibilityHotkeyEnabled { get => _visibilityHotkeyEnabled; set => Set(ref _visibilityHotkeyEnabled, value); }
 
         public string OpacityText => Opacity.ToString("0") + "%";
         public string ScaleText => Scale.ToString("0") + "%";
@@ -111,6 +117,8 @@ namespace PixelOverlay.Models
             Rotation = other.Rotation;
             GifSpeed = other.GifSpeed;
             GifPlaying = other.GifPlaying;
+            IgnoreGameBarOpacity = other.IgnoreGameBarOpacity;
+            VisibilityHotkeyEnabled = other.VisibilityHotkeyEnabled;
         }
     }
 

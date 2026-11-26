@@ -110,6 +110,12 @@ namespace PixelOverlay.Services
             PublishChanged();
         }
 
+        public async Task AddImageAndSelectAsync(ImageRecord item, OverlayState nextState)
+        {
+            AddImageAndSelect(item, nextState);
+            await FlushAsync();
+        }
+
         public void RemoveImage(string imageId)
         {
             if (string.IsNullOrWhiteSpace(imageId)) return;
