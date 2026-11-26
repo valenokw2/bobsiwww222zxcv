@@ -136,11 +136,13 @@ namespace PixelOverlay.Views
                 SyncLayerCollection(state.Layers);
                 UpdateLayerPositions();
 
-                var visibleLayers = _layers.Where(x => x.IsVisible && !string.IsNullOrWhiteSpace(x.ImageId)).ToList();
-                Hint.Visibility = visibleLayers.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                Hint.Visibility = _layers.Any(x => x.IsVisible && x.ImageSource != null)
+                    ? Visibility.Collapsed : Visibility.Visible;
                 Hint.Text = _layers.Count == 0
                     ? "Open this widget's settings to add images"
-                    : "No visible layers. Show a layer in Pixel Overlay Settings.";
+                    : _layers.Any(x => x.IsVisible)
+                        ? "Loading images or no layer could be displayed."
+                        : "No visible layers. Show a layer in Pixel Overlay Settings.";
 
                 foreach (var layer in _layers.OrderBy(x => x.ZIndex).ToList())
                 {
@@ -265,8 +267,6 @@ namespace PixelOverlay.Views
                     _gifPlayers.Remove(layerId);
                 }
                 // Keep the already decoded first frame as a static fallback when GIF playback fails.
-                if (IsCurrentLayer(layerId, imageId) && layer.ImageSource == null)
-                    layer.ImageSource = null;
                 if (IsCurrentLayer(layerId, imageId) && layer.ImageSource != null)
                     _loadedImageIds[layerId] = imageId;
             }
