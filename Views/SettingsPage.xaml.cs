@@ -232,7 +232,7 @@ namespace PixelOverlay.Views
                 var a = _profiles[i];
                 var b = source[i];
                 if (a == null || b == null || !string.Equals(a.Name, b.Name, StringComparison.Ordinal) ||
-                    a.SelectedLayerId != b.SelectedLayerId || a.Layers?.Count != b.Layers?.Count)
+                    a.SelectedLayerId != b.SelectedLayerId || a.HasLayerSnapshot != b.HasLayerSnapshot || a.Layers?.Count != b.Layers?.Count)
                     return false;
                 if (a.Layers != null)
                 {
