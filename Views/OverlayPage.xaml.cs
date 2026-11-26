@@ -17,7 +17,7 @@ namespace PixelOverlay.Views
 {
     public sealed partial class OverlayPage : Page
     {
-        private const int MaxAnimatedGifPlayers = 4;
+        private const int MaxAnimatedGifPlayers = 2;
 
         private XboxGameBarWidget _widget;
         private readonly ImageLibraryService _images = new ImageLibraryService();
@@ -259,8 +259,16 @@ namespace PixelOverlay.Views
             catch (Exception ex)
             {
                 AppDiagnostics.Log(item.IsGif ? "Load GIF layer" : "Load image layer", ex);
-                if (IsCurrentLayer(layerId, imageId))
+                if (_gifPlayers.TryGetValue(layerId, out var failedPlayer))
+                {
+                    failedPlayer.Dispose();
+                    _gifPlayers.Remove(layerId);
+                }
+                // Keep the already decoded first frame as a static fallback when GIF playback fails.
+                if (IsCurrentLayer(layerId, imageId) && layer.ImageSource == null)
                     layer.ImageSource = null;
+                if (IsCurrentLayer(layerId, imageId) && layer.ImageSource != null)
+                    _loadedImageIds[layerId] = imageId;
             }
             finally { _loadingLayers.Remove(layerId); }
         }
