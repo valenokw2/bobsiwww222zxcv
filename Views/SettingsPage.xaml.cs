@@ -356,8 +356,8 @@ namespace PixelOverlay.Views
                 if (_restoringSelection || _updatingLibraryView || _applyingStoreSnapshot || !(LibraryList.SelectedItem is ImageRecord item)) return;
                 _selected = item;
                 _state.SelectedImageId = item.Id;
-                // The selection handler synchronously updates the store; force the pending
-                // debounce to disk before returning to the game or closing Settings.
+                SettingsStore.Current.UpdateState(_windowId, _state);
+                // Force the pending debounce to disk before returning to the game or closing Settings.
                 await SettingsStore.Current.FlushAsync();
                 RefreshLibraryFilter();
                 await LoadPreviewAsync();
@@ -583,7 +583,7 @@ namespace PixelOverlay.Views
             RefreshLibraryFilter();
         }
 
-        private void ApplyLibrarySelection_Click(object sender, RoutedEventArgs e)
+        private async void ApplyLibrarySelection_Click(object sender, RoutedEventArgs e)
         {
             if (!(LibraryList.SelectedItem is ImageRecord item))
             {
@@ -592,6 +592,17 @@ namespace PixelOverlay.Views
             }
             _selected = item;
             _state.SelectedImageId = item.Id;
+            try
+            {
+                SettingsStore.Current.UpdateState(_windowId, _state);
+                await SettingsStore.Current.FlushAsync();
+                await LoadPreviewAsync();
+            }
+            catch (Exception ex)
+            {
+                AppDiagnostics.Log("Apply library image to window", ex);
+                ShowError("The selected image could not be applied: " + ex.Message);
+            }
         }
 
         private async void ImportUrl_Click(object sender, RoutedEventArgs e)
