@@ -176,7 +176,7 @@ namespace PixelOverlay.Services
             if (uri == null || !uri.IsAbsoluteUri ||
                 !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
                 string.IsNullOrWhiteSpace(uri.Host) || !string.IsNullOrEmpty(uri.UserInfo))
-                throw new InvalidOperationException("Only public HTTPS image URLs without embedded credentials are supported.");
+                throw new InvalidOperationException("Only HTTPS image URLs without embedded credentials are supported.");
         }
 
         private static string DetectImageExtension(byte[] data)
