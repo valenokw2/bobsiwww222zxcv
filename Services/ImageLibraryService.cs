@@ -27,7 +27,7 @@ namespace PixelOverlay.Services
         private const long MaxExternalImageBytes = 32L * 1024L * 1024L;
         private static readonly HttpClient ExternalHttpClient = new HttpClient();
         private static readonly object ImageCacheSync = new object();
-        private static Task ImageCacheInitialization;
+        [ThreadStatic] private static Task ImageCacheInitialization;
 
         public async Task<ImageRecord> PickAndImportAsync()
         {
