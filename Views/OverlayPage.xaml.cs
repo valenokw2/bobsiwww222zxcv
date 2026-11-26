@@ -142,6 +142,21 @@ namespace PixelOverlay.Views
 
                 UpdateHint();
 
+                // Release hidden or paused GIF decoders first, so later visible layers
+                // can claim the freed animation slots in this same refresh pass.
+                foreach (var layer in _layers)
+                {
+                    if (layer.IsVisible && (_widget == null || _widget.Visible) && layer.GifPlaying)
+                        continue;
+                    if (_gifPlayers.TryGetValue(layer.LayerId, out var inactivePlayer))
+                    {
+                        inactivePlayer.Dispose();
+                        _gifPlayers.Remove(layer.LayerId);
+                        if (_staticImageCache.TryGetValue(layer.ImageId ?? string.Empty, out var fallback))
+                            layer.ImageSource = fallback;
+                    }
+                }
+
                 foreach (var layer in _layers.OrderBy(x => x.ZIndex).ToList())
                 {
                     if (_cleanedUp) return;
@@ -156,13 +171,6 @@ namespace PixelOverlay.Views
 
                     bool visible = layer.IsVisible && (_widget == null || _widget.Visible);
                     bool shouldAnimate = visible && layer.GifPlaying;
-                    if (!shouldAnimate && _gifPlayers.TryGetValue(layer.LayerId, out var hiddenPlayer))
-                    {
-                        hiddenPlayer.Dispose();
-                        _gifPlayers.Remove(layer.LayerId);
-                        if (_staticImageCache.TryGetValue(item.Id, out var fallback))
-                            layer.ImageSource = fallback;
-                    }
 
                     if (_loadedImageIds.TryGetValue(layer.LayerId, out var loadedId) &&
                         string.Equals(loadedId, item.Id, StringComparison.Ordinal))
