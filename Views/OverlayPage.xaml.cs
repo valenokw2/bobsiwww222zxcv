@@ -15,6 +15,8 @@ namespace PixelOverlay.Views
     public sealed partial class OverlayPage : Page
     {
         private XboxGameBarWidget _widget;
+        private string _windowId = WindowSlotIds.FirstWindowId;
+        private AssetCacheService.AssetLease _gifLease;
         private readonly ImageLibraryService _images = new ImageLibraryService();
         private GifPlayer _gif;
         private string _loadedId;
@@ -37,7 +39,16 @@ namespace PixelOverlay.Views
 
         protected override void OnNavigatedTo(Windows.UI.Xaml.Navigation.NavigationEventArgs e)
         {
-            if (e.Parameter is XboxGameBarWidget widget) _widget = widget;
+            if (e.Parameter is WidgetActivationContext context)
+            {
+                _widget = context.Widget;
+                _windowId = WindowSlotIds.Normalize(context.WindowId);
+            }
+            else if (e.Parameter is XboxGameBarWidget widget)
+            {
+                _widget = widget;
+                _windowId = WindowSlotIds.FirstWindowId;
+            }
             base.OnNavigatedTo(e);
         }
 
@@ -48,11 +59,12 @@ namespace PixelOverlay.Views
                 await SettingsStore.Current.LoadAsync();
                 if (_cleanedUp) return;
 
-                SettingsStore.Current.StateChanged += OnStateChanged;
+                SettingsStore.Current.WindowStateChanged += OnWindowStateChanged;
                 if (_widget != null)
                 {
                     _widget.RequestedOpacityChanged += OnWidgetStateChanged;
                     _widget.GameBarDisplayModeChanged += OnWidgetStateChanged;
+                    _widget.VisibleChanged += OnWidgetStateChanged;
                     _widget.ClickThroughEnabledChanged += OnWidgetStateChanged;
                 }
                 await RefreshAsync();
@@ -68,12 +80,13 @@ namespace PixelOverlay.Views
             if (_cleanedUp) return;
             _cleanedUp = true;
 
-            SettingsStore.Current.StateChanged -= OnStateChanged;
+            SettingsStore.Current.WindowStateChanged -= OnWindowStateChanged;
             StopVisibilityHotkey();
             if (_widget != null)
             {
                 _widget.RequestedOpacityChanged -= OnWidgetStateChanged;
                 _widget.GameBarDisplayModeChanged -= OnWidgetStateChanged;
+                _widget.VisibleChanged -= OnWidgetStateChanged;
                 _widget.ClickThroughEnabledChanged -= OnWidgetStateChanged;
             }
 
@@ -82,11 +95,14 @@ namespace PixelOverlay.Views
             _loadedId = null;
             _gif?.Dispose();
             _gif = null;
+            _gifLease?.Dispose();
+            _gifLease = null;
             OverlayImage.Source = null;
         }
 
-        private async void OnStateChanged(object sender, EventArgs e)
+        private async void OnWindowStateChanged(object sender, WindowStateChangedEventArgs e)
         {
+            if (e == null || !string.Equals(e.WindowId, _windowId, StringComparison.Ordinal)) return;
             try
             {
                 await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal,
@@ -98,6 +114,8 @@ namespace PixelOverlay.Views
         private async void OnWidgetStateChanged(XboxGameBarWidget sender, object args)
         {
             try
+            {
+                _gif?.SetVisible(sender != null && sender.Visible);
             {
                 await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal,
                     () => { _ = RefreshSafelyAsync(); });
@@ -117,7 +135,7 @@ namespace PixelOverlay.Views
 
             UpdateTransformCenter();
             var snapshot = SettingsStore.Current.GetSnapshot();
-            var state = snapshot.State ?? new OverlayState();
+            var state = SettingsStore.Current.GetWindowState(_windowId);
 
             OverlayImage.Opacity = state.Opacity / 100d;
             UpdateVisibilityHotkey(state.VisibilityHotkeyEnabled);
@@ -142,6 +160,8 @@ namespace PixelOverlay.Views
                 _loadedId = null;
                 _gif?.Dispose();
                 _gif = null;
+                _gifLease?.Dispose();
+                _gifLease = null;
                 OverlayImage.Source = null;
                 Hint.Text = "Open this widget's settings to import an image";
                 Hint.Visibility = Visibility.Visible;
@@ -151,7 +171,11 @@ namespace PixelOverlay.Views
             Hint.Visibility = Visibility.Collapsed;
             if (string.Equals(_loadedId, item.Id, StringComparison.Ordinal))
             {
-                if (item.IsGif) _gif?.UpdateSchedule(state);
+                if (item.IsGif)
+                {
+                    _gif?.UpdateSchedule(state);
+                    _gif?.SetVisible(_widget == null || _widget.Visible);
+                }
                 return;
             }
 
@@ -164,16 +188,24 @@ namespace PixelOverlay.Views
             _loadedId = null;
             _gif?.Dispose();
             _gif = null;
+            _gifLease?.Dispose();
+            _gifLease = null;
             OverlayImage.Source = null;
             Hint.Text = "Loading image...";
             Hint.Visibility = Visibility.Visible;
 
+            AssetCacheService.AssetLease pendingLease = null;
             try
             {
                 if (item.IsGif)
                 {
-                    var file = await _images.GetFileAsync(item);
-                    if (!IsCurrentLoad(generation, item.Id)) return;
+                    pendingLease = await AssetCacheService.Instance.AcquireGifAsync(item, _images);
+                    if (!IsCurrentLoad(generation, item.Id))
+                    {
+                        pendingLease.Dispose();
+                        pendingLease = null;
+                        return;
+                    }
 
                     var player = new GifPlayer();
                     _gif = player;
@@ -193,15 +225,20 @@ namespace PixelOverlay.Views
                         }
                     };
 
-                    await player.OpenAsync(file, state);
+                    await player.OpenAsync(pendingLease.DetachStream(), state);
                     if (!IsCurrentLoad(generation, item.Id))
                     {
                         player.Dispose();
+                        pendingLease.Dispose();
+                        pendingLease = null;
                         return;
                     }
+                    _gifLease = pendingLease;
+                    pendingLease = null;
                     // The selected GIF may have finished decoding after the user changed
                     // playback speed or pressed Pause. Apply the latest shared snapshot.
-                    player.UpdateSchedule(SettingsStore.Current.GetSnapshot().State);
+                    player.UpdateSchedule(SettingsStore.Current.GetWindowState(_windowId));
+                    player.SetVisible(_widget == null || _widget.Visible);
                     OverlayImage.Source = player.CurrentFrame;
                 }
                 else
@@ -216,12 +253,16 @@ namespace PixelOverlay.Views
             }
             catch (Exception ex)
             {
+                pendingLease?.Dispose();
+                pendingLease = null;
                 AppDiagnostics.Log(item.IsGif ? "Overlay GIF load" : "Overlay image load", ex);
                 if (IsCurrentLoad(generation, item.Id))
                 {
                     _loadedId = null;
                     _gif?.Dispose();
                     _gif = null;
+                    _gifLease?.Dispose();
+                    _gifLease = null;
                     OverlayImage.Source = null;
                     Hint.Text = "Image could not be displayed";
                     Hint.Visibility = Visibility.Visible;
@@ -314,7 +355,7 @@ namespace PixelOverlay.Views
         private bool IsCurrentLoad(int generation, string imageId)
         {
             if (_cleanedUp || generation != _imageLoadGeneration) return false;
-            var current = SettingsStore.Current.GetSnapshot().State;
+            var current = SettingsStore.Current.GetWindowState(_windowId);
             return string.Equals(current?.SelectedImageId, imageId, StringComparison.Ordinal);
         }
     }
