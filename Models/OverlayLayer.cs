@@ -57,7 +57,7 @@ namespace PixelOverlay.Models
 
         public string LayerId { get => _layerId; set => Set(ref _layerId, string.IsNullOrWhiteSpace(value) ? Guid.NewGuid().ToString("N") : value); }
         public string ImageId { get => _imageId; set => Set(ref _imageId, value); }
-        public bool IsVisible { get => _isVisible; set { if (Set(ref _isVisible, value)) Raise(nameof(LayerVisibility)); } }
+        public bool IsVisible { get => _isVisible; set { if (Set(ref _isVisible, value)) { Raise(nameof(LayerVisibility)); Raise(nameof(VisibilityGlyph)); } } }
         public int ZIndex { get => _zIndex; set => Set(ref _zIndex, Math.Max(0, Math.Min(29, value))); }
         public double Width { get => _width; set { if (Set(ref _width, Clamp(value, 0, 8192, 0))) { Raise(nameof(TransformCenterX)); Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY); } } }
         public double Height { get => _height; set { if (Set(ref _height, Clamp(value, 0, 8192, 0))) { Raise(nameof(TransformCenterY)); Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY); } } }
@@ -82,6 +82,7 @@ namespace PixelOverlay.Models
         }
 
         public Visibility LayerVisibility => IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        public string VisibilityGlyph => IsVisible ? "◉" : "○";
         public double CanvasLeft => _canvasLeft;
         public double CanvasTop => _canvasTop;
         public double TransformCenterX => Width / 2d;
