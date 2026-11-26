@@ -357,9 +357,7 @@ namespace PixelOverlay.Views
             if (layer.Width > 0 && layer.Height > 0) return;
             double width = Math.Max(1, pixelWidth);
             double height = Math.Max(1, pixelHeight);
-            double availableWidth = Math.Max(160, OverlaySurface.ActualWidth > 0 ? OverlaySurface.ActualWidth * .8 : 300);
-            double availableHeight = Math.Max(120, OverlaySurface.ActualHeight > 0 ? OverlaySurface.ActualHeight * .8 : 300);
-            double scale = Math.Min(1d, Math.Min(availableWidth / width, availableHeight / height));
+            double scale = Math.Min(1d, OverlayLayer.DefaultMaxEdge / Math.Max(width, height));
             layer.Width = Math.Max(1, width * scale);
             layer.Height = Math.Max(1, height * scale);
         }
