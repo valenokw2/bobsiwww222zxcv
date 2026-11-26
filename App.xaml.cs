@@ -8,6 +8,7 @@ using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Navigation;
+using PixelOverlay.Models;
 using PixelOverlay.Services;
 using PixelOverlay.Views;
 
@@ -20,6 +21,7 @@ namespace PixelOverlay
             public XboxGameBarWidget Widget { get; set; }
             public CoreDispatcher Dispatcher { get; set; }
             public Action Cleanup { get; set; }
+            public string WindowId { get; set; }
         }
 
         private readonly object _widgetsSync = new object();
@@ -48,9 +50,14 @@ namespace PixelOverlay
                 if (!widgetArgs.IsLaunchActivation) return;
 
                 Type pageType;
-                if (widgetArgs.AppExtensionId == "PixelOverlay") pageType = typeof(OverlayPage);
-                else if (widgetArgs.AppExtensionId == "PixelOverlaySettings") pageType = typeof(SettingsPage);
-                else return;
+                string windowId = null;
+                bool isOverlay = WindowSlotIds.TryGetWindowId(widgetArgs.AppExtensionId, out windowId);
+                if (isOverlay)
+                    pageType = typeof(OverlayPage);
+                else if (string.Equals(widgetArgs.AppExtensionId, "PixelOverlaySettings", StringComparison.Ordinal))
+                    pageType = typeof(SettingsPage);
+                else
+                    return;
 
                 await SettingsStore.Current.LoadAsync();
 
@@ -60,7 +67,10 @@ namespace PixelOverlay
                 window.Content = frame;
 
                 var widget = new XboxGameBarWidget(widgetArgs, window.CoreWindow, frame);
-                if (!frame.Navigate(pageType, widget))
+                object navigationParameter = isOverlay
+                    ? (object)new WidgetActivationContext(widget, windowId)
+                    : widget;
+                if (!frame.Navigate(pageType, navigationParameter))
                     throw new InvalidOperationException("Game Bar widget page navigation was rejected.");
 
                 var page = frame.Content as Page;
@@ -74,7 +84,8 @@ namespace PixelOverlay
                 {
                     Widget = widget,
                     Dispatcher = window.Dispatcher,
-                    Cleanup = cleanup
+                    Cleanup = cleanup,
+                    WindowId = windowId
                 };
 
                 lock (_widgetsSync) _widgets.Add(registration);
