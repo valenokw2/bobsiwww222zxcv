@@ -23,6 +23,8 @@ namespace PixelOverlay.Models
         [DataMember] private double _gifSpeed;
         [DataMember] private bool _gifPlaying;
 
+        public const double DefaultMaxEdge = 240d;
+
         // Runtime-only values. DataContractJsonSerializer ignores members without DataMember.
         private ImageSource _imageSource;
         private string _displayName;
