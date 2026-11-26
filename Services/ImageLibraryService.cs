@@ -83,6 +83,9 @@ namespace PixelOverlay.Services
             using (var request = new HttpRequestMessage(HttpMethod.Get, uri))
             using (var response = await ExternalHttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
             {
+                var finalUri = response.RequestMessage == null ? null : response.RequestMessage.RequestUri;
+                if (finalUri == null || finalUri.Scheme != Uri.UriSchemeHttps)
+                    throw new InvalidDataException("The image URL redirected away from HTTPS.");
                 response.EnsureSuccessStatusCode();
                 var mediaType = response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant();
                 if (string.IsNullOrWhiteSpace(mediaType))
