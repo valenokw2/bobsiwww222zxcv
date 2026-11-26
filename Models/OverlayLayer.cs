@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.Serialization;
 using PixelOverlay.Models;
+using Windows.UI.Xaml;
 using Windows.UI.Xaml.Media;
 
 namespace PixelOverlay.Models
@@ -42,8 +43,8 @@ namespace PixelOverlay.Models
             _layerId = Guid.NewGuid().ToString("N");
             _isVisible = true;
             _zIndex = 0;
-            _width = 180;
-            _height = 180;
+            _width = 0;
+            _height = 0;
             _opacity = 100;
             _scale = 100;
             _positionX = 0;
@@ -55,10 +56,10 @@ namespace PixelOverlay.Models
 
         public string LayerId { get => _layerId; set => Set(ref _layerId, string.IsNullOrWhiteSpace(value) ? Guid.NewGuid().ToString("N") : value); }
         public string ImageId { get => _imageId; set => Set(ref _imageId, value); }
-        public bool IsVisible { get => _isVisible; set => Set(ref _isVisible, value); }
+        public bool IsVisible { get => _isVisible; set { if (Set(ref _isVisible, value)) Raise(nameof(LayerVisibility)); } }
         public int ZIndex { get => _zIndex; set => Set(ref _zIndex, Math.Max(0, Math.Min(29, value))); }
-        public double Width { get => _width; set { if (Set(ref _width, Clamp(value, 1, 8192, 180))) { Raise(nameof(TransformCenterX)); Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY); } } }
-        public double Height { get => _height; set { if (Set(ref _height, Clamp(value, 1, 8192, 180))) { Raise(nameof(TransformCenterY)); Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY); } } }
+        public double Width { get => _width; set { if (Set(ref _width, Clamp(value, 0, 8192, 0))) { Raise(nameof(TransformCenterX)); Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY); } } }
+        public double Height { get => _height; set { if (Set(ref _height, Clamp(value, 0, 8192, 0))) { Raise(nameof(TransformCenterY)); Reposition(_surfaceWidth / 2d + PositionX, _surfaceHeight / 2d + PositionY); } } }
         public double Opacity { get => _opacity; set { if (Set(ref _opacity, Clamp(value, 0, 100, 100))) Raise(nameof(OpacityFactor)); } }
         public double Scale { get => _scale; set { if (Set(ref _scale, Clamp(value, 10, 500, 100))) Raise(nameof(ScaleFactor)); } }
         public double PositionX { get => _positionX; set { if (Set(ref _positionX, Clamp(value, -100000, 100000, 0))) Raise(nameof(PositionX)); } }
@@ -73,6 +74,7 @@ namespace PixelOverlay.Models
             set => Set(ref _imageSource, value);
         }
 
+        public Visibility LayerVisibility => IsVisible ? Visibility.Visible : Visibility.Collapsed;
         public double CanvasLeft => _canvasLeft;
         public double CanvasTop => _canvasTop;
         public double TransformCenterX => Width / 2d;
@@ -132,8 +134,8 @@ namespace PixelOverlay.Models
         {
             if (string.IsNullOrWhiteSpace(_layerId)) _layerId = Guid.NewGuid().ToString("N");
             _zIndex = Math.Max(0, Math.Min(29, _zIndex));
-            _width = Clamp(_width, 1, 8192, 180);
-            _height = Clamp(_height, 1, 8192, 180);
+            _width = Clamp(_width, 0, 8192, 0);
+            _height = Clamp(_height, 0, 8192, 0);
             _opacity = Clamp(_opacity, 0, 100, 100);
             _scale = Clamp(_scale, 10, 500, 100);
             _positionX = Clamp(_positionX, -100000, 100000, 0);
