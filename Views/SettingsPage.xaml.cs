@@ -547,7 +547,7 @@ namespace PixelOverlay.Views
         private void Preview_PointerCaptureLost(object sender, PointerRoutedEventArgs e) => _dragging = false;
         private void Preview_PointerCanceled(object sender, PointerRoutedEventArgs e) => _dragging = false;
 
-        private void SavePreset_Click(object sender, RoutedEventArgs e)
+        private async void SavePreset_Click(object sender, RoutedEventArgs e)
         {
             var name = ProfileNameBox.Text?.Trim();
             if (string.IsNullOrWhiteSpace(name))
@@ -557,6 +557,8 @@ namespace PixelOverlay.Views
             }
             SettingsStore.Current.SaveProfile(_state.Snapshot(name));
             ProfileNameBox.Text = string.Empty;
+            try { await SettingsStore.Current.FlushAsync(); }
+            catch (Exception ex) { AppDiagnostics.Log("Save composition preset", ex); ShowError("Could not save preset: " + ex.Message); }
         }
 
         private async void ApplyPreset_Click(object sender, RoutedEventArgs e)
@@ -571,10 +573,12 @@ namespace PixelOverlay.Views
             catch (Exception ex) { AppDiagnostics.Log("Apply composition preset", ex); ShowError("Could not apply preset: " + ex.Message); }
         }
 
-        private void RemovePreset_Click(object sender, RoutedEventArgs e)
+        private async void RemovePreset_Click(object sender, RoutedEventArgs e)
         {
-            if (((FrameworkElement)sender).Tag is OverlayProfile profile)
-                SettingsStore.Current.RemoveProfile(profile.Name);
+            if (!(((FrameworkElement)sender).Tag is OverlayProfile profile)) return;
+            SettingsStore.Current.RemoveProfile(profile.Name);
+            try { await SettingsStore.Current.FlushAsync(); }
+            catch (Exception ex) { AppDiagnostics.Log("Remove composition preset", ex); }
         }
 
         private void Profile_SelectionChanged(object sender, SelectionChangedEventArgs e) { }
